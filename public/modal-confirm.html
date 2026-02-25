@@ -1,0 +1,64 @@
+<!-- モーダル HTML -->
+<div id="confirm-modal" class="confirm-modal">
+    <div class="confirm-modal-content">
+        <div class="confirm-modal-header">
+            <span id="confirm-modal-close" class="confirm-modal-close">&times;</span>
+            <h2 class="confirm-modal-title">確認</h2>
+        </div>
+        <div class="confirm-modal-body">
+            <p id="confirm-modal-message">この操作を実行しますか？</p>
+        </div>
+        <div class="confirm-modal-footer">
+            <button id="confirm-modal-yes" class="confirm-modal-button confirm-modal-button-yes">はい</button>
+            <button id="confirm-modal-no" class="confirm-modal-button confirm-modal-button-no">いいえ</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 背景を暗くしてモーダルを際立たせる */
+    .confirm-modal {
+        display: none; /* 初期表示で非表示 */
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* 他のCSSは同じ */
+</style>
+
+<script>
+    // モーダルを開く関数
+    function openConfirmModal(message, onConfirm) {
+        document.getElementById('confirm-modal-message').textContent = message;
+        document.getElementById('confirm-modal').style.display = 'flex';
+
+        // 「はい」ボタンのイベントを設定
+        document.getElementById('confirm-modal-yes').onclick = function () {
+            onConfirm();
+            closeConfirmModal();
+        };
+
+        // 「いいえ」ボタンや閉じるボタンのクリックでモーダルを閉じる
+        document.getElementById('confirm-modal-no').onclick = closeConfirmModal;
+        document.getElementById('confirm-modal-close').onclick = closeConfirmModal;
+    }
+
+    // モーダルを閉じる関数
+    function closeConfirmModal() {
+        document.getElementById('confirm-modal').style.display = 'none';
+    }
+
+    // モーダルを開くボタンの例（テスト用）
+    document.getElementById('some-action-button').addEventListener('click', () => {
+        openConfirmModal("この操作を実行しますか？", () => {
+            window.DebaglogSet?.("操作が確認されました。");
+        });
+    });
+</script>

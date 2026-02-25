@@ -1,0 +1,78 @@
+﻿<div id="skill-container">
+    <!-- 左側: 選択されたスキルリスト（現在は未使用） -->
+    <!-- <div id="skill-left">
+        <button onclick="sendData()">データ送信</button>
+        <div id="attack-method-container">
+            <label for="attack-method-select">攻撃手段を選択</label>
+            <select id="attack-method-select" onchange="handleAttackMethodChange()">
+            </select>
+        </div>
+
+        <button id="full-power-btn" onclick="toggleFullPowerMode()">全力モード</button>
+        <table id="selected-skills-table">
+            <thead>
+                <tr>
+                    <th>分類</th>
+                    <th>技名</th>
+                    <th>威力</th>
+                    <th>状態</th>
+                    <th>属性</th>
+                </tr>
+            </thead>
+            <tbody id="selected-skills">
+            </tbody>
+        </table>
+        <button onclick="clearAllSkills()">全てを削除</button>
+    </div> -->
+
+    <!-- 右側: スキルの種別ごとに表示するタブ付きスキルリスト -->
+    <div id="skill-right">
+        <!-- タブメニュー -->
+        <div class="tab-menu-skill">
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill active" onclick="openSkillTab('A')">A</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('S')">S</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('Q')">Q</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('M')">M</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('MS')">MS</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('MQ')">MQ</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('P')">P</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button class="tab-button-skill" onclick="openSkillTab('ACTIVE')">発動中</button>
+            </span>
+            <span class="tab-button-skill-item">
+                <button id="skill-settings-tab-btn" class="tab-button-skill tab-button-skill-gear" onclick="openSkillTab('SETTINGS')" title="設定">&#9881;</button>
+            </span>
+        </div>
+
+        <!-- タブコンテンツ（種別ごとのスキルテーブル） -->
+        <div id="skill-tables">
+            <div id="skill-SETTINGS" class="skill-tab-panel" style="display: none;">
+                <h3>表示設定</h3>
+                <div class="skill-settings-group">
+                    <label class="skill-layout-settings-row skill-layout-mode-row">
+                        <input type="radio" name="skill-layout-mode" value="current" onchange="setSkillTableLayoutMode('current', event)">
+                        <span>タイプ1</span>
+                    </label>
+                    <label class="skill-layout-settings-row skill-layout-mode-row">
+                        <input type="radio" name="skill-layout-mode" value="image2" onchange="setSkillTableLayoutMode('image2', event)" checked>
+                        <span>タイプ2</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

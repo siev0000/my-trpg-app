@@ -1,0 +1,196 @@
+{
+  "version": 1,
+  "updatedAt": "2026-02-25T00:47:59.040Z",
+  "presets": {
+    "ドゥンケルハイト": {
+      "爪コンボ": {
+        "updatedAt": "2026-02-23T16:38:44.821Z",
+        "icon": "",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "闇からの一撃",
+            "Q1": "剛爪",
+            "Q2": "影変形",
+            "M": ""
+          },
+          "attackMethod": "爪",
+          "fullPowerOn": false
+        }
+      },
+      "セット_0128": {
+        "updatedAt": "2026-02-23T16:38:10.045Z",
+        "icon": "",
+        "payload": {
+          "selectedSkills": {
+            "A": "",
+            "S": "",
+            "Q1": "",
+            "Q2": "",
+            "M": ""
+          },
+          "attackMethod": "爪",
+          "fullPowerOn": false
+        }
+      },
+      "闇コンボ": {
+        "updatedAt": "2026-02-23T21:59:22.951Z",
+        "icon": "悪魔.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "闇からの一撃",
+            "Q1": "剛爪",
+            "Q2": "影変形",
+            "M": ""
+          },
+          "attackMethod": "爪",
+          "fullPowerOn": false
+        }
+      },
+      "全力爪コンボ": {
+        "updatedAt": "2026-02-24T11:19:30.243Z",
+        "icon": "重力.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "闇からの一撃",
+            "Q1": "剛爪",
+            "Q2": "影変形",
+            "M": ""
+          },
+          "attackMethod": "爪",
+          "fullPowerOn": true
+        }
+      }
+    },
+    "リコリス": {
+      "剣王・無灯一輪": {
+        "updatedAt": "2026-02-24T11:22:15.202Z",
+        "icon": "重力.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "無灯一輪",
+            "Q1": "闇の波動放出",
+            "Q2": "直進する波動",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": true
+        }
+      },
+      "テスト用": {
+        "updatedAt": "2026-02-24T14:00:22.353Z",
+        "icon": "闇.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "",
+            "Q1": "闇の波動放出",
+            "Q2": "",
+            "M": ""
+          },
+          "attackMethod": "武器2",
+          "fullPowerOn": false
+        }
+      },
+      "セット_2311": {
+        "updatedAt": "2026-02-24T14:11:03.240Z",
+        "icon": "",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "柳暗花明",
+            "Q1": "闇の波動放出",
+            "Q2": "炸裂の波導",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": false
+        }
+      }
+    },
+    "キリョク=ラセツ": {
+      "セット_2317": {
+        "updatedAt": "2026-02-24T16:02:18.436Z",
+        "icon": "",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "破壊力",
+            "Q1": "",
+            "Q2": "",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": true
+        }
+      }
+    },
+    "シュテン=ドウジ": {
+      "セット_2333": {
+        "updatedAt": "2026-02-24T14:33:19.017Z",
+        "icon": "角.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "貫通",
+            "S": "炎気旋風",
+            "Q1": "重動剛撃",
+            "Q2": "炎の波動放出",
+            "M": ""
+          },
+          "attackMethod": "角",
+          "fullPowerOn": true
+        }
+      }
+    },
+    "クルーツェル": {
+      "光の守り手": {
+        "updatedAt": "2026-02-24T16:13:57.694Z",
+        "icon": "光.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "防御",
+            "S": "光の護り手",
+            "Q1": "不落要塞",
+            "Q2": "不動反射",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": false
+        }
+      },
+      "セット_0722": {
+        "updatedAt": "2026-02-24T22:22:49.211Z",
+        "icon": "炎.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "炎の魔装",
+            "Q1": "炎の波動放出",
+            "Q2": "不動反射",
+            "M": ""
+          },
+          "attackMethod": "武器2",
+          "fullPowerOn": false
+        }
+      },
+      "セット1": {
+        "updatedAt": "2026-02-25T00:47:59.040Z",
+        "icon": "",
+        "payload": {
+          "selectedSkills": {
+            "A": "防御",
+            "S": "光の護り手",
+            "Q1": "不落要塞",
+            "Q2": "不動反射",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": false
+        }
+      }
+    }
+  }
+}

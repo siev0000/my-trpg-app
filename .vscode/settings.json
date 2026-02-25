@@ -1,0 +1,23 @@
+{
+    "files.encoding": "utf8",
+    "files.autoGuessEncoding": false,
+    "files.eol": "\n",
+    "terminal.integrated.defaultProfile.windows": "PowerShell 7 (pwsh)",
+    "terminal.integrated.profiles.windows": {
+        "PowerShell 7 (pwsh)": {
+            "path": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+            "args": [
+                "-NoLogo",
+                "-NoExit",
+                "-Command",
+                "if (Test-Path '.\\.vscode\\pwsh-init.ps1') { . '.\\.vscode\\pwsh-init.ps1' }"
+            ]
+        }
+    },
+    "terminal.integrated.automationProfile.windows": {
+        "path": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+        "args": [
+            "-NoLogo"
+        ]
+    }
+}

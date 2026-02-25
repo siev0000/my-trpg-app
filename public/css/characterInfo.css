@@ -1,0 +1,183 @@
+﻿#character-info-container {
+    height: 100%;
+    overflow-y: scroll;
+    overflow-x: hidden;
+    scrollbar-gutter: stable both-edges;
+    padding-right: 4px;
+    z-index: 1;
+    scrollbar-width: thin;
+    scrollbar-color: #8aaac7 #edf3f9;
+}
+
+#character-info-container::-webkit-scrollbar {
+    width: 10px;
+}
+
+#character-info-container::-webkit-scrollbar-track {
+    background-color: #edf3f9;
+    border-radius: 999px;
+}
+
+#character-info-container::-webkit-scrollbar-thumb {
+    background-color: #8aaac7;
+    border-radius: 999px;
+    border: 2px solid #e8eff7;
+}
+
+#character-info-container::-webkit-scrollbar-thumb:hover {
+    background-color: #6f93b6;
+}
+
+#character-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.character-container {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1px;
+    width: 148px;
+    background: linear-gradient(180deg, #fdfefe 0%, #f5f8fb 100%);
+    border: 1px solid #d7e0ea;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.09);
+    transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    z-index: 2;
+}
+
+.character-container:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.16);
+    border-color: #b8c7d8;
+}
+
+.character-container.selected {
+    border: 1px solid #1f7a8c;
+    background: linear-gradient(180deg, #e8f7fb 0%, #dff2f8 100%);
+    box-shadow: 0 8px 18px rgba(31, 122, 140, 0.22);
+}
+
+.character-container p {
+    margin: 0;
+    color: #333;
+}
+
+.character-container .character-name {
+    width: 150px;
+    font-size: 17px;
+    line-height: 1.25;
+    color: #1d2a36;
+    font-weight: 700;
+    margin-left: -10px;
+}
+
+.character-container .character-meta {
+    font-size: 0.78rem;
+    color: #5b6672;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.character-container .status-bar {
+    width: 100%;
+}
+
+.status-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 2px 0;
+}
+
+.status-bar label {
+    width: 20px;
+    font-size: 16px;
+    margin-left: -10px;
+    color: #4c566a;
+    font-weight: bold;
+}
+
+.progress-container {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.status-bar progress {
+    width: 100%;
+    height: 18px;
+    border-radius: 999px;
+    appearance: none;
+    overflow: hidden;
+    background-color: #9ca3ad;
+}
+
+.status-bar progress::-webkit-progress-bar {
+    background-color: #767d87;
+    border-radius: 999px;
+}
+
+.progress-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    white-space: nowrap;
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1;
+    letter-spacing: 0.02em;
+    /* 濃い背景・明るい背景の両方で読めるように黒縁を付与 */
+    -webkit-text-stroke: 0.1px #000;
+    text-shadow:
+        -1px -1px 0 #000,
+         1px -1px 0 #000,
+        -1px  1px 0 #000,
+         1px  1px 0 #000,
+         0 1px 2px rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+}
+
+.status-bar .mp-bar::-webkit-progress-bar {
+    background-color: #a0a7b1;
+    border-radius: 999px;
+}
+
+.status-bar .mp-bar::-webkit-progress-value {
+    background-color: #0078da;
+    border-radius: 999px;
+}
+
+.status-bar .mp-bar::-moz-progress-bar {
+    background-color: #0078da;
+    border-radius: 999px;
+}
+
+.status-bar .mp-bar {
+    background-color: #0078da;
+}
+
+.status-bar .st-bar::-webkit-progress-bar {
+    background-color: #a0a7b1;
+    border-radius: 999px;
+}
+
+.status-bar .st-bar::-webkit-progress-value {
+    background-color: #cfba00;
+    border-radius: 999px;
+}
+
+.status-bar .st-bar::-moz-progress-bar {
+    background-color: #cfa200;
+    border-radius: 999px;
+}
+
+.status-bar .st-bar {
+    background-color: #cfa200;
+}

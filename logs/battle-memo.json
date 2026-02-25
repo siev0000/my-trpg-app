@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "updatedAt": "2026-02-23T15:28:48.048Z",
+  "memos": {
+    "guest": {
+      "ドゥンケルハイト": {
+        "text": "保存てす２",
+        "updatedAt": "2026-02-23T10:44:45.846Z"
+      }
+    },
+    "siev": {
+      "format": "multi-v1",
+      "shared": {
+        "tabs": [
+          {
+            "id": "tab-mlz2m4m1-ds2ok",
+            "title": "共有メモ",
+            "text": "共有メモsiev"
+          }
+        ],
+        "activeTabId": "tab-mlz2m4m1-ds2ok"
+      },
+      "characters": {
+        "ドゥンケルハイト": {
+          "tabs": [
+            {
+              "id": "legacy-mlz2m4m1-06qfn",
+              "title": "メモ",
+              "text": "てｓｔ"
+            },
+            {
+              "id": "tab-mlzbsu2b-vdh2m",
+              "title": "メモ2",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbsu2b-vdh2m"
+        },
+        "ユーベルベーゼ": {
+          "tabs": [
+            {
+              "id": "tab-mlz7gbrz-a95h4",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlz7gbrz-a95h4"
+        },
+        "リコリス": {
+          "tabs": [
+            {
+              "id": "tab-mlz7gbrz-74a7z",
+              "title": "メモ",
+              "text": "sad"
+            }
+          ],
+          "activeTabId": "tab-mlz7gbrz-74a7z"
+        },
+        "シュファー=ロール": {
+          "tabs": [
+            {
+              "id": "tab-mlz7gbrz-wvmz9",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlz7gbrz-wvmz9"
+        },
+        "リコリスD": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-tilow",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-tilow"
+        },
+        "クタアト": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-dnypv",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-dnypv"
+        },
+        "エイボン": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-7r382",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-7r382"
+        },
+        "エービス": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-bmhox",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-bmhox"
+        },
+        "シャロン": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-d7d2p",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-d7d2p"
+        },
+        "ディスフィロア・ドゥレム・ディラ": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-0wj4c",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-0wj4c"
+        },
+        "水龍王 ネロ・バシレウス": {
+          "tabs": [
+            {
+              "id": "tab-mlzbqzmh-w6hi5",
+              "title": "メモ",
+              "text": ""
+            }
+          ],
+          "activeTabId": "tab-mlzbqzmh-w6hi5"
+        }
+      }
+    },
+    "rikorisu": {
+      "format": "multi-v1",
+      "shared": {
+        "tabs": [
+          {
+            "id": "tab-mlz8uqhw-68j6u",
+            "title": "共有メモ",
+            "text": ""
+          }
+        ],
+        "activeTabId": "tab-mlz8uqhw-68j6u"
+      },
+      "characters": {}
+    },
+    "sige": {
+      "format": "multi-v1",
+      "shared": {
+        "tabs": [
+          {
+            "id": "tab-mm0ow3m8-thngk",
+            "title": "共有メモ",
+            "text": ""
+          }
+        ],
+        "activeTabId": "tab-mm0ow3m8-thngk"
+      },
+      "characters": {}
+    }
+  }
+}

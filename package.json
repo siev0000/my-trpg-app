@@ -1,0 +1,35 @@
+{
+    "name": "my-trpg-app",
+    "version": "1.0.0",
+    "main": "server.js",
+    "scripts": {
+        "prestart": "npm run check:mojibake",
+        "start": "node server.js",
+        "predev:api": "npm run check:mojibake",
+        "dev:api": "cross-env PORT=3001 node server.js",
+        "predev": "npm run check:mojibake",
+        "dev": "vite",
+        "watch:mojibake": "node scripts/watch-mojibake.js",
+        "dev:all": "concurrently -k \"npm:watch:mojibake\" \"npm:dev:api\" \"npm:dev\"",
+        "check:mojibake": "node scripts/check-mojibake.js",
+        "prebuild": "npm run check:mojibake",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "cors": "^2.8.5",
+        "express": "^4.21.1",
+        "vue": "^3.5.28",
+        "xlsx": "^0.17.5"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "devDependencies": {
+        "@vitejs/plugin-vue": "^6.0.4",
+        "concurrently": "^9.2.1",
+        "cross-env": "^10.1.0",
+        "vite": "^7.3.1"
+    }
+}

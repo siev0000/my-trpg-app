@@ -1,0 +1,277 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>タブコンテナ</title>
+</head>
+<body>
+    <div id="tab-container">
+        <!-- メインタブメニュー -->
+        <div class="tab-menu main-tabs">
+            <button class="tab-button active" onclick="openTab('status', this)">ステータス</button>
+            <button class="tab-button" onclick="openTab('levels', this)">レベル一覧</button>
+            <button class="tab-button" onclick="openTab('items', this)">アイテム</button>
+            <button class="tab-button" onclick="openTab('battle', this)">戦闘画面</button>
+            <button class="tab-button memo-open-button" type="button" onclick="openBattleMemoModal()">メモ</button>
+        </div>
+
+
+        <!-- ステータスタブコンテンツ -->
+        <div id="status" class="tab-content active">
+            <div></div>
+            <button id="toggle-button" class="toggle-button" onclick="toggleTotalView()">基礎値表示/合計値表示</button>
+            <div id="stats-container">
+                <!-- 基本ステータス -->
+                <div id="basic-stats" class="stats-category">
+                    <h3>身体能力</h3>
+                    <div id="stats-section" class="stats-section">
+                    </div>
+                </div>
+                <div id="body-stats" class="stats-category">
+                    <h3>肉体値</h3>
+                    <div id="body-section" class="body-section">
+                    </div>
+                </div>
+            
+                <!-- 軽減/耐性 -->
+                <div id="resistance-stats" class="stats-category">
+                    <h3>耐性</h3>
+                    <div id="resistance-section" class="resistance-section">
+                    </div>
+                </div>
+            
+                <!-- 技能値 -->
+                <div id="talents-stats" class="stats-category">
+                    <h3>技能値</h3>
+                    <div id="talents-section" class="talents-section">
+                    </div>
+                </div>
+            </div>
+            
+            
+            
+        </div>
+
+        <!-- 他のメインタブコンテンツ -->
+        <div id="levels" class="tab-content">
+            <h2>レベル一覧</h2>
+            <!-- 表示切り替えボタン -->
+            <!-- <div id="toggle-buttons">
+                <button onclick="changeKeys('basic')">基本情報</button>
+                <button onclick="changeKeys('combat')">戦闘ステータス</button>
+                <button onclick="changeKeys('elements')">属性ステータス</button>
+                <button onclick="changeKeys('status')">ステータス耐性</button>
+                <button onclick="changeKeys('weaknesses')">弱点・スキル</button>
+            </div>             -->
+            <div id="levels-table-wrap">
+                <table id="levels-table" border="1">
+                    <thead>
+                        <tr>
+                            <!-- デフォルトヘッダー -->
+                            <th>職業名</th>
+                            <th>漢字名</th>
+                            <th>レベル</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- データがここに挿入されます -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="items" class="tab-content">
+            <!-- セカンダリタブメニュー（showSecondaryTabを使う）-->
+            <div class="tab-menu secondary-tabs">
+                <button class="tab-button active" data-secondary-tab="equipment" onclick="showSecondaryTab('equipment', this)">装備</button>
+                <button class="tab-button" data-secondary-tab="inventory" onclick="showSecondaryTab('inventory', this)">持ち物</button>
+                <button class="tab-button" data-secondary-tab="storage" onclick="showSecondaryTab('storage', this)">倉庫</button>
+            </div>
+
+            <!-- セカンダリタブコンテンツ -->
+            <div id="equipment" class="secondary-tab-content active">
+                <table id="equipment-table" class="equipment-table">
+                    <thead id="equipment-thead">
+                        <tr>
+                            <th>部位</th>
+                            <th>名前</th>
+                            <th>威力</th>
+                            <th>属性</th>
+                            <th>防御</th>
+                            <th>軽減</th>
+                        </tr>
+                    </thead>
+                    <tbody id="equipment-tbody">
+                        <!-- JavaScriptでデータが挿入されます -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="inventory" class="secondary-tab-content">
+                <table id="inventory-table" class="inventory-table">
+                    <thead id="inventory-thead">
+                        <tr>
+                            <th>部位</th>
+                            <th>名前</th>
+                            <th>威力</th>
+                            <th>属性</th>
+                            <th>防御</th>
+                            <th>軽減</th>
+                        </tr>
+                    </thead>
+                    <tbody id="inventory-tbody">
+                        <!-- JavaScriptでデータが挿入されます -->
+                    </tbody>
+                </table>
+            </div>
+            <div id="storage" class="secondary-tab-content">
+                <table id="storage-table" class="storage-table">
+                    <thead id="storage-thead">
+                        <tr>
+                            <th>部位</th>
+                            <th>名前</th>
+                            <th>威力</th>
+                            <th>属性</th>
+                            <th>防御</th>
+                            <th>軽減</th>
+                        </tr>
+                    </thead>
+                    <tbody id="storage-tbody">
+                        <!-- JavaScriptでデータが挿入されます -->
+                    </tbody>
+                </table>
+            </div>     
+        </div>
+        <div id="battle" class="tab-content">
+            <!-- 横並びのメインコンテナ -->
+            <div id="battle-container">
+                <!-- 左側: スキルリスト -->
+                <div id="skill-left">
+                    <div id="battle-left-fixed">
+                        <div id="attack-method-container">
+                            <label for="attack-method-select">攻撃手段:</label>
+                            <button id="attack-method-open-button" type="button" onclick="openAttackMethodChangeModal()">
+                                --選択してください--
+                            </button>
+                            <select id="attack-method-select">
+                            </select>
+                        </div>
+                        <div id="battle-action-buttons">
+                            <button id="full-power-btn" onclick="toggleFullPowerMode()" aria-pressed="false">全力モード OFF</button>
+                            <button id="skill-detail-btn" onclick="openSelectedSkillsDetailModal()">詳細</button>
+                        </div>
+                    </div>
+                    <div id="selected-skills-scroll">
+                        <table id="selected-skills-table">
+                            <thead>
+                                <tr>
+                                    <th>分類</th>
+                                    <th>技名</th>
+                                </tr>
+                            </thead>
+                            <tbody id="selected-skills">
+                                <tr>
+                                    <td>例</td>
+                                    <td>スキル1</td>
+                                </tr>
+                            </tbody>
+                            <tfoot id="skills-total-row">
+                                <tr>
+                                    <td>合計</td>
+                                    <td class="skills-total-summary">
+                                        <div class="skills-total-line">
+                                            <span class="skills-total-badge">A</span>
+                                            威力 <span id="total-power-a">0</span>
+                                            / 守り <span id="total-defense-a">0</span>
+                                            / 状態 <span id="total-state-a">0</span>
+                                        </div>
+                                        <div class="skills-total-line">
+                                            <span class="skills-total-badge">M</span>
+                                            威力 <span id="total-power-m">0</span>
+                                            / 守り <span id="total-defense-m">0</span>
+                                            / 状態 <span id="total-state-m">0</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <!-- <div id="skill-preset-actions">
+                        <button id="skill-preset-save-btn" type="button" onclick="openSkillSetPresetSaveDialog()">セット登録</button>
+                        <button id="skill-preset-load-btn" type="button" onclick="openSkillSetPresetLoadDialog()">セット呼出</button>
+                    </div> -->
+                    <button id="clearSkillsButton" onclick="clearAllSkills()">全て削除</button>
+                </div>
+        
+                <!-- 右側: ダイス設定とダイス結果を縦並びに配置 -->
+                <div id="dice-right">
+                    <!-- ダイス設定エリア -->
+                    <div id="dice-settings">
+                        <button id="next-turn-btn" onclick="advanceTurn()">次ターン</button><div id="battle-turn-display">ターン: 1</div>
+                        <div class="dice-setting-item">
+                            <label for="dice-count">ダイス数</label>
+                            <input type="number" id="dice-count" min="1" value="1">
+                        </div>
+                        
+                        <div class="dice-setting-item">
+                            <label for="dice-max">ダイス最大値</label>
+                            <input type="number" id="dice-max" min="2" value="100">
+                        </div>
+                
+                        <div id="dice-action-buttons">
+                            <button id="roll-dice-btn" onclick="rollDice()">ダイスを振る</button>
+                            <button id="sendDataButton" onclick="openSkillSetSendModal()">データ送信</button>
+                           
+                        </div>
+                        
+                    </div>
+        
+                    <!-- ダイス結果ログ -->
+                    <div id="dice-results">
+                        <h3>ダイス結果ログ</h3>
+                        <ul id="dice-log"></ul>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <div id="battle-memo-modal" class="battle-memo-modal" aria-hidden="true">
+            <div class="battle-memo-modal-content" role="dialog" aria-modal="true" aria-labelledby="battle-memo-modal-title">
+                <div id="battle-memo-header">
+                    <h3 id="battle-memo-modal-title">メモ</h3>
+                    <div class="battle-memo-header-actions">
+                        <span id="battle-memo-saved-at">最終保存: --</span>
+                        <button id="battle-memo-save-btn" type="button">保存</button>
+                        <button id="battle-memo-close-btn" type="button" aria-label="メモを閉じる">×</button>
+                    </div>
+                </div>
+                <div id="battle-memo-layout">
+                    <aside id="battle-memo-target-panel">
+                        <h4>メモ対象</h4>
+                        <div id="battle-memo-target-list"></div>
+                    </aside>
+                    <section id="battle-memo-editor-panel">
+                        <div id="battle-memo-tabs-header">
+                            <div id="battle-memo-tabs"></div>
+                            <button id="battle-memo-add-tab-btn" type="button" aria-label="メモタブ追加">＋</button>
+                            <button id="battle-memo-remove-tab-btn" type="button" aria-label="メモタブ削除">－</button>
+                        </div>
+                        <div id="battle-memo-title-row">
+                            <label for="battle-memo-title-input">タイトル</label>
+                            <input id="battle-memo-title-input" type="text" maxlength="40" placeholder="メモタイトル">
+                        </div>
+                        <div id="battle-memo-profile-fields" aria-label="プロフィール入力"></div>
+                        <textarea id="battle-memo-text" placeholder="ここにメモを入力"></textarea>
+                    </section>
+                </div>
+                <div id="battle-memo-status"></div>
+            </div>
+        </div>
+            
+        
+
+    <script>
+
+    </script>
+</body>
+</html>

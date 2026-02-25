@@ -1,0 +1,2018 @@
+﻿/* 蝓ｺ譛ｬ險ｭ螳・*/
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* #tab-container {
+    width: 100%;
+    height: 100vh;
+    margin: auto;
+} */
+
+
+#tab-container {
+    --tab-main-bg: #ecf0f6;
+    --tab-main-active-bg: #215a8a;
+    --tab-main-active-text: #ffffff;
+    --tab-sub-active-bg: #2f855a;
+    --tab-text: #2f3a45;
+    --tab-scroll-track: #edf3f9;
+    --tab-scroll-thumb: #8aaac7;
+    --tab-scroll-thumb-hover: #6f93b6;
+    --tab-scroll-thumb-border: #e8eff7;
+}
+
+#tab-container .tab-menu {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 8px 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    justify-content: flex-start;
+    scrollbar-width: thin;
+    /* max-width: 800px; */
+}
+
+#tab-container .tab-menu::-webkit-scrollbar {
+    height: 6px;
+}
+
+#tab-container .tab-menu::-webkit-scrollbar-thumb {
+    background-color: var(--tab-scroll-thumb);
+    border-radius: 999px;
+}
+
+#tab-container .tab-menu::-webkit-scrollbar-track {
+    background-color: var(--tab-scroll-track);
+    border-radius: 999px;
+}
+
+#tab-container .stats-category,
+#tab-container #equipment,
+#tab-container #inventory,
+#tab-container #storage,
+#tab-container #selected-skills-scroll,
+#tab-container .dice-log-list,
+#tab-container #levels-table-wrap {
+    scrollbar-width: thin;
+    scrollbar-color: var(--tab-scroll-thumb) var(--tab-scroll-track);
+}
+
+#tab-container .stats-category::-webkit-scrollbar,
+#tab-container #equipment::-webkit-scrollbar,
+#tab-container #inventory::-webkit-scrollbar,
+#tab-container #storage::-webkit-scrollbar,
+#tab-container #selected-skills-scroll::-webkit-scrollbar,
+#tab-container .dice-log-list::-webkit-scrollbar,
+#tab-container #levels-table-wrap::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#tab-container .stats-category::-webkit-scrollbar-thumb,
+#tab-container #equipment::-webkit-scrollbar-thumb,
+#tab-container #inventory::-webkit-scrollbar-thumb,
+#tab-container #storage::-webkit-scrollbar-thumb,
+#tab-container #selected-skills-scroll::-webkit-scrollbar-thumb,
+#tab-container .dice-log-list::-webkit-scrollbar-thumb,
+#tab-container #levels-table-wrap::-webkit-scrollbar-thumb {
+    background-color: var(--tab-scroll-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--tab-scroll-thumb-border);
+}
+
+#tab-container .stats-category::-webkit-scrollbar-thumb:hover,
+#tab-container #equipment::-webkit-scrollbar-thumb:hover,
+#tab-container #inventory::-webkit-scrollbar-thumb:hover,
+#tab-container #storage::-webkit-scrollbar-thumb:hover,
+#tab-container #selected-skills-scroll::-webkit-scrollbar-thumb:hover,
+#tab-container .dice-log-list::-webkit-scrollbar-thumb:hover,
+#tab-container #levels-table-wrap::-webkit-scrollbar-thumb:hover {
+    background-color: var(--tab-scroll-thumb-hover);
+}
+
+#tab-container .stats-category::-webkit-scrollbar-track,
+#tab-container #equipment::-webkit-scrollbar-track,
+#tab-container #inventory::-webkit-scrollbar-track,
+#tab-container #storage::-webkit-scrollbar-track,
+#tab-container #selected-skills-scroll::-webkit-scrollbar-track,
+#tab-container .dice-log-list::-webkit-scrollbar-track,
+#tab-container #levels-table-wrap::-webkit-scrollbar-track {
+    background-color: var(--tab-scroll-track);
+    border-radius: 999px;
+}
+
+#tab-container .main-tabs {
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 6px;
+}
+
+#tab-container .tab-button {
+    flex: 0 0 auto;
+    height: 42px;
+    /* width: 100px;
+    min-width: 100px; */
+    padding: 0 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background-color: var(--tab-main-bg);
+    color: var(--tab-text);
+    font-size: 16px;
+    line-height: 1.15;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+#tab-container .tab-button:hover {
+    background-color: #dbe3ed;
+    border-color: #c9d4e2;
+}
+
+#tab-container .tab-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(62, 128, 197, 0.25);
+}
+
+#tab-container .main-tabs .tab-button {
+    flex: 0 0 100px;
+    width: 124px;
+}
+
+#tab-container .main-tabs .memo-open-button {
+    flex: 0 0 auto;
+    width: 88px;
+    min-width: 88px;
+    padding-inline: 0;
+    background: linear-gradient(180deg, #f5f9ff 0%, #e7eef8 100%);
+    border-color: #b6c7da;
+}
+
+#tab-container .main-tabs .memo-open-button:hover {
+    background: linear-gradient(180deg, #eef5ff 0%, #dce8f6 100%);
+    border-color: #9ab2cc;
+}
+
+#tab-container .main-tabs .tab-button.active {
+    background-color: var(--tab-main-active-bg);
+    color: var(--tab-main-active-text);
+    border-color: #1a4a72;
+}
+
+#tab-container .secondary-tabs .tab-button {
+    min-height: 38px;
+    min-width: 96px;
+    font-size: 15px;
+}
+
+#tab-container .secondary-tabs .tab-button.active {
+    background-color: var(--tab-sub-active-bg);
+    color: #ffffff;
+    border-color: #246846;
+}
+
+#tab-container .tab-content {
+    display: none;
+}
+
+#tab-container .tab-content.active {
+    display: block;
+}
+
+#tab-container .secondary-tab-content {
+    display: none;
+}
+
+#tab-container .secondary-tab-content.active {
+    display: block;
+}
+
+.sub-tab-menu {
+    display: flex;
+    justify-content: center;
+    margin-top: 2vh;
+}
+
+.sub-tab-button {
+    padding: 1.2vh 1.8vw; 
+    font-size: 1.6vh;
+    border: none;
+    background-color: #f9f9f9;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.sub-tab-button.active, .sub-tab-button:hover {
+    background-color: #eee;
+}
+
+.stats-section, .resistance-section, .skills-section, .body-section, .talents-section {
+    display: block;
+}
+
+#stats-container {
+    display: flex;
+    gap: 0.6vh;
+    background-color: #f5f5f5;
+    height: 440px; /* 各カテゴリの表示領域 */
+}
+
+.stats-category {
+    flex: 1;
+    height: 100%;
+    background-color: #ffffff;
+    border-radius: 1vw;
+    box-shadow: 0 0.4vh 0.8vh rgba(0, 0, 0, 0.1);
+    padding: 0.8vw;
+    overflow-y: auto; /* カテゴリごとに個別スクロール */
+}
+.stats-category h3 {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background-color: #ffffff;
+    text-align: center;
+    margin-bottom: 0.6vh;
+    font-size: 18px;
+    color: #333;
+    padding-bottom: 0.4vh;
+    border-bottom: 1px solid #e6ecf2;
+}
+
+.status-category-icon {
+    width: 2.6vh;
+    height: 2.6vh;
+    min-width: 24px;
+    min-height: 24px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+.stats-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    background-color: #ffffff;
+}
+
+.stats-table tbody th,
+.stats-table tbody td {
+    padding: 0.35vh 0.4vw;
+    font-size: 14px;
+    border-bottom: 1px solid #edf2f7;
+    white-space: nowrap;
+}
+
+.stats-table tbody th {
+    font-weight: 700;
+    color: #334155;
+    text-align: left;
+    font-size: 18px;
+    width: 58%;
+}
+
+.stats-table tbody th.label-reduce {
+    color: #6b21a8;
+    background-color: #f4e8ff;
+}
+
+.stats-table tbody th.label-resist {
+    color: #b91c1c;
+    background-color: #ffeaea;
+}
+
+.stats-table tbody tr.row-reduce td.value {
+    background-color: #fbf5ff;
+}
+
+.stats-table tbody tr.row-resist td.value {
+    background-color: #fff4f4;
+}
+
+.stats-table tbody td.value {
+    text-align: center;
+    font-size: 16px;
+    width: 42%;
+}
+
+.stats-table .value-wrap {
+    position: relative;
+    min-height: 1.9em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stats-table .value-main {
+    position: relative;
+    z-index: 2;
+    transform: translateX(-6px);
+    color: #000000;
+    font-weight: 800;
+    line-height: 1.2;
+    -webkit-text-stroke: 0.25px #ffffff;
+    text-shadow:
+        2px 0 0 #ffffff,
+        -2px 0 0 #ffffff,
+        0 2px 0 #ffffff,
+        0 -2px 0 #ffffff;
+}
+
+.stats-table .increase-inline {
+    position: absolute;
+    right: 0;
+    bottom: -0.2em;
+    font-size: 12px;
+    transform: translateX(5px);
+    color: #2f855a;
+    font-weight: 700;
+    line-height: 1;
+    text-shadow:
+        1px 0 0 #ffffff,
+        -1px 0 0 #ffffff,
+        0 1px 0 #ffffff,
+        0 -1px 0 #ffffff;
+}
+
+.stats-table .total-row th,
+.stats-table .total-row td.value .value-main {
+    font-weight: 800;
+    color: #000000;
+}
+
+.stats-table .stats-group-title {
+    font-size: 15px;
+    font-weight: 800;
+    text-align: left;
+    padding: 0.35vh 0.4vw;
+    background: #f8fafc;
+    border-bottom: 1px solid #dde5ef;
+}
+
+.stats-table .stats-group-title.reduce {
+    color: #6b21a8;
+    background-color: #eedcff;
+}
+
+.stats-table .stats-group-title.resist {
+    color: #b91c1c;
+    background-color: #ffe1e1;
+}
+
+.stats-table tbody tr:last-child th,
+.stats-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.toggle-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55em;
+    min-width: 230px;
+    padding: 0.55vh 1.4vw;
+    font-size: 14px;
+    margin-right: 2vw;
+    margin-top: 1.2%;
+    font-weight: 700;
+    color: #1f2937;
+    background: linear-gradient(180deg, #ffffff 0%, #e8eff8 100%);
+    border: 1px solid #b8c7da;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.14);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.toggle-button::before {
+    content: "基礎";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.2em;
+    padding: 0.12em 0.55em;
+    font-size: 11px;
+    font-weight: 800;
+    color: #1d4ed8;
+    background-color: #dbeafe;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+}
+
+.toggle-button.is-total {
+    color: #14532d;
+    background: linear-gradient(180deg, #f1fff5 0%, #dff7e8 100%);
+    border-color: #94c9ab;
+}
+
+.toggle-button.is-total::before {
+    content: "合計";
+    color: #065f46;
+    background-color: #d1fae5;
+    border-color: #a7f3d0;
+}
+
+.toggle-button:hover {
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+    border-color: #99b1ca;
+}
+
+.toggle-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.toggle-button:active {
+    transform: translateY(1px);
+}
+
+
+
+
+
+#dice-settings {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 5px 5px;
+    margin: 0;
+    width: 100%;
+    padding: 0.75vh 0.68vw;
+    border: 1px solid #cfdcec;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #f9fcff 0%, #edf4fb 100%);
+    box-shadow: 0 2px 8px rgba(20, 33, 61, 0.12);
+}
+
+#dice-action-buttons {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.55vh 0.5vw;
+}
+
+.dice-setting-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35vh;
+    margin: 0;
+}
+
+#dice-settings label {
+    font-weight: 700;
+    text-align: left;
+    font-size: 13px;
+    color: #2b3f55;
+    margin: 0;
+    letter-spacing: 0.02em;
+}
+
+#dice-settings input[type="number"] {
+    width: 100%;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    color: #1f2a37;
+    border-radius: 8px;
+    border: 1px solid #b9c9dc;
+    background-color: #ffffff;
+}
+
+#dice-settings input[type="number"]:focus-visible {
+    outline: none;
+    border-color: #4f8bbd;
+    box-shadow: 0 0 0 3px rgba(79, 139, 189, 0.22);
+}
+
+#roll-dice-btn {
+    align-self: stretch;
+    width: 100%;
+    height: 34px;
+    padding: 0 12px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #ffffff;
+    background: linear-gradient(180deg, #2a8ad8 0%, #1f6dad 100%);
+    border: 1px solid #1e5f95;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+    margin: 0;
+    letter-spacing: 0.02em;
+}
+
+#roll-dice-btn:hover {
+    filter: brightness(1.05);
+    box-shadow: 0 4px 10px rgba(31, 109, 173, 0.35);
+}
+
+#roll-dice-btn:active {
+    transform: translateY(1px);
+}
+
+#battle #sendDataButton {
+    align-self: stretch;
+    width: 100%;
+    height: 34px;
+    padding: 0 12px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #2c4358;
+    background: linear-gradient(180deg, #f7fbff 0%, #e9f0f7 100%);
+    border: 1px solid #b8c7da;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+    margin: 0;
+    letter-spacing: 0.02em;
+}
+
+#battle #sendDataButton:hover {
+    filter: brightness(1.03);
+    box-shadow: 0 4px 10px rgba(75, 102, 131, 0.26);
+}
+
+#battle #sendDataButton:active {
+    transform: translateY(1px);
+}
+
+#next-turn-btn {
+    grid-column: 1;
+    align-self: stretch;
+    width: 100%;
+    height: 34px;
+    padding: 0 10px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #2a455f;
+    background: linear-gradient(180deg, #f8fbff 0%, #e6eef8 100%);
+    border: 1px solid #b7c8da;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+#next-turn-btn:hover {
+    filter: brightness(1.03);
+    box-shadow: 0 4px 10px rgba(75, 102, 131, 0.26);
+}
+
+#next-turn-btn:active {
+    transform: translateY(1px);
+}
+
+#battle-turn-display {
+    grid-column: 2;
+    margin-top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 19px;
+    font-weight: 800;
+    color: #20486b;
+}
+
+#dice-results {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: linear-gradient(180deg, #f9fcff 0%, #eef4fb 100%);
+    padding: 0.9vh 0.8vw;
+    border: 1px solid #d3dfec;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(20, 33, 61, 0.12);
+    overflow: hidden;
+}
+
+#dice-results h3 {
+    margin: 0;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 800;
+    color: #1f3850;
+    letter-spacing: 0.02em;
+}
+
+#battle-memo-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2360;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(11, 24, 39, 0.42);
+    /* padding: 12px; */
+}
+
+#battle-memo-modal.is-open {
+    display: flex;
+}
+
+.battle-memo-modal-content {
+    top: 1px;
+    width: 720px;
+    height: 1100px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8vh;
+    background: linear-gradient(180deg, #f9fcff 0%, #eef4fb 100%);
+    padding: 1.2vh 1vw;
+    border: 1px solid #d3dfec;
+    border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(13, 33, 56, 0.38);
+}
+
+#battle-memo-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+#battle-memo-header h3 {
+    margin: 0;
+    text-align: left;
+    font-size: 22px;
+    font-weight: 800;
+    color: #1f3850;
+    letter-spacing: 0.02em;
+}
+
+.battle-memo-header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#battle-memo-saved-at {
+    font-size: 12px;
+    font-weight: 700;
+    color: #3a5c79;
+    white-space: nowrap;
+}
+
+#battle-memo-save-btn {
+    height: 36px;
+    padding: 0 16px;
+    border: 1px solid #b9c9dc;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #2c4863;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#battle-memo-close-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid #b9c9dc;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #2c4863;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#battle-memo-layout {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 10px;
+}
+
+#battle-memo-target-panel {
+    width: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px;
+    border: 1px solid #d3dfec;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #f2f7fd 100%);
+}
+
+#battle-memo-target-panel h4 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #274766;
+}
+
+#battle-memo-target-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 2px;
+}
+
+.battle-memo-target-btn {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    width: 100%;
+    height: auto !important;
+    /* min-height: 34px; */
+    border: 1px solid #bfd0e3;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #264765;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: left;
+    padding: 7px 9px;
+    overflow: visible;
+    cursor: pointer;
+}
+
+.battle-memo-target-btn-label {
+    display: block;
+    width: 100%;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.battle-memo-target-btn.is-active {
+    background: linear-gradient(180deg, #e8f3ff 0%, #d7e9fb 100%);
+    border-color: #79a8d3;
+    color: #123b5f;
+}
+
+#battle-memo-editor-panel {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 9px;
+    border: 1px solid #d3dfec;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f8fd 100%);
+}
+
+#battle-memo-tabs-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+}
+
+#battle-memo-tabs {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 1px;
+}
+
+.battle-memo-tab-btn {
+    flex: 0 0 auto;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #bfd0e3;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #2b4964;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.battle-memo-tab-btn.is-active {
+    background: linear-gradient(180deg, #2a6fa8 0%, #245f8f 100%);
+    border-color: #1f5b8a;
+    color: #ffffff;
+}
+
+#battle-memo-add-tab-btn,
+#battle-memo-remove-tab-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #7f9dbe;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #244a69;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+#battle-memo-remove-tab-btn {
+    color: #8f2f2f;
+    border-color: #b69494;
+    font-size: 20px;
+}
+
+#battle-memo-remove-tab-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+#battle-memo-title-row {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
+    gap: 7px;
+}
+
+#battle-memo-title-row label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #3b5874;
+}
+
+#battle-memo-title-input {
+    width: 100%;
+    height: 34px;
+    border: 1px solid #bfd0e3;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #20384d;
+    font-size: 14px;
+    padding: 0 10px;
+}
+
+#battle-memo-profile-fields {
+    display: none;
+    gap: 8px;
+    max-height: 1100px;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.battle-memo-profile-row {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 7px;
+    align-items: start;
+}
+
+.battle-memo-profile-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #3b5874;
+    padding-top: 7px;
+}
+
+.battle-memo-profile-input,
+.battle-memo-profile-textarea,
+.battle-memo-profile-select {
+    width: 100%;
+    border: 1px solid #bfd0e3;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #20384d;
+    font-size: 14px;
+}
+
+.battle-memo-profile-input {
+    height: 34px;
+    padding: 0 10px;
+}
+
+.battle-memo-profile-birthday {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+}
+
+.battle-memo-profile-select {
+    height: 34px;
+    padding: 0 8px;
+}
+
+.battle-memo-profile-textarea {
+    min-height: 34px;
+    resize: none;
+    overflow-y: hidden;
+    line-height: 1.5;
+    padding: 8px 10px;
+}
+
+#battle-memo-text {
+    width: 100%;
+    flex: 1;
+    min-height: 200px;
+    resize: none;
+    border: 1px solid #b9c9dc;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #20384d;
+    font-size: 16px;
+    line-height: 1.5;
+    padding: 11px 12px;
+}
+
+#battle-memo-status {
+    min-height: 18px;
+    font-size: 14px;
+    color: #2f5f89;
+    font-weight: 700;
+}
+
+#battle-memo-status.is-error {
+    color: #9a1f1f;
+}
+
+#dice-log-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6vw;
+    margin: 0 0 0.6vh;
+}
+
+#dice-log-tabs {
+    display: flex;
+    align-items: center;
+    gap: 0.35vw;
+    margin: 0;
+    margin-left: auto;
+}
+
+.dice-log-tab-btn {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #b9c9dc;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #2c4863;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.dice-log-tab-btn:hover {
+    background: #edf5ff;
+    border-color: #91aed0;
+}
+
+.dice-log-tab-btn.active {
+    background: #2a6fa8;
+    border-color: #1f5988;
+    color: #ffffff;
+}
+
+.dice-log-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 13px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.dice-log-list li {
+    padding: 0.42vh 0.4vw;
+    border-bottom: 1px solid #dce6f2;
+    text-align: left;
+    line-height: 1.28;
+    color: #2a3b4e;
+    background-color: rgba(255, 255, 255, 0.72);
+}
+
+.dice-log-list li:first-child {
+    background-color: #e8f4ff;
+}
+
+.dice-log-list::-webkit-scrollbar {
+    width: 9px;
+}
+
+.dice-log-list::-webkit-scrollbar-thumb {
+    background: #8aaac7;
+    border-radius: 999px;
+    border: 2px solid #e8eff7;
+}
+
+.dice-log-list::-webkit-scrollbar-track {
+    background: #edf3f9;
+    border-radius: 999px;
+}
+
+.dice-log-list .dice-log-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.26vh;
+}
+
+.dice-log-list .dice-log-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.36vw;
+    flex-wrap: wrap;
+    font-size: 13px;
+    font-weight: 700;
+    color: #3d4f63;
+}
+
+.dice-log-list .dice-log-turn {
+    font-size: 15px;
+    color: #1d4d73;
+    font-weight: 800;
+}
+
+.dice-log-list .dice-log-character {
+    padding: 0.05em 0.45em;
+    border-radius: 999px;
+    background-color: #dbeafe;
+    color: #1e3a8a;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.dice-log-list .dice-log-time {
+    color: #5a6c81;
+}
+
+.dice-log-list .dice-log-setup {
+    font-size: 15px;
+    color: #214e71;
+    font-weight: 800;
+}
+
+.dice-log-list .dice-log-send {
+    margin-left: auto;
+    padding: 0.08em 0.45em;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 11px;
+    line-height: 1.2;
+}
+
+.dice-log-list .dice-log-send.is-sent {
+    font-size: 10px;
+    color: #0f5132;
+    background-color: #dcfce7;
+    border-color: #86efac;
+    cursor: help;
+}
+
+.dice-log-list .dice-log-send.is-failed {
+    color: #991b1b;
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+}
+
+.dice-log-list .dice-log-send.is-unsent {
+    color: #1e3a8a;
+    background-color: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.dice-log-list .dice-log-results {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1f2a37;
+    letter-spacing: 0.01em;
+    word-break: break-word;
+}
+
+/* =================================================== */
+
+#items {
+    padding: 0.2vh 0.2vw;
+}
+
+#items .secondary-tabs {
+    margin-bottom: 0.5vh;
+    padding-bottom: 0.2vh;
+    border-bottom: 1px solid #dae4ef;
+}
+
+#items .secondary-tabs .tab-button {
+    min-width: 110px;
+    min-height: 36px;
+    font-size: 14px;
+}
+
+#equipment, #inventory, #storage {
+    height: 425px;
+    overflow: auto;
+    font-size: 20px;
+    margin-top: 0.35vh;
+    border: 1px solid #d7e0ea;
+    border-radius: 0.8vh;
+    background-color: #f9fbfd;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.equipment-table, .inventory-table, .storage-table {
+    width: 100%;
+    min-width: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    background-color: #ffffff;
+}
+
+.equipment-table th, .inventory-table th, .storage-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0.5vh 0.28vw;
+    font-size: 1.15em;
+    font-weight: 800;
+    text-align: center;
+    color: #ffffff;
+    background: linear-gradient(180deg, #295f89 0%, #214e71 100%);
+    border-bottom: 1px solid #183a54;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.equipment-table td, .inventory-table td, .storage-table td {
+    padding: 0.43vh 0.26vw;
+    font-size: 18px;
+    color: #1f2937;
+    text-align: center;
+    border-bottom: 1px solid #e7edf4;
+    border-right: 1px solid #eef3f7;
+    background-color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.equipment-table tbody tr:nth-child(even) td,
+.inventory-table tbody tr:nth-child(even) td,
+.storage-table tbody tr:nth-child(even) td {
+    background-color: #f7fafd;
+}
+
+.equipment-table tbody tr:hover td,
+.inventory-table tbody tr:hover td,
+.storage-table tbody tr:hover td {
+    background-color: #edf6ff;
+}
+
+.equipment-table .item-name-cell.item-clickable-cell,
+.inventory-table .item-name-cell.item-clickable-cell,
+.storage-table .item-name-cell.item-clickable-cell {
+    cursor: pointer;
+}
+
+.equipment-table .item-name-cell.item-clickable-cell,
+.inventory-table .item-name-cell.item-clickable-cell,
+.storage-table .item-name-cell.item-clickable-cell {
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.equipment-table .item-name-cell.item-clickable-cell:hover,
+.inventory-table .item-name-cell.item-clickable-cell:hover,
+.storage-table .item-name-cell.item-clickable-cell:hover {
+    background-color: #e5f2ff;
+}
+
+.equipment-table .item-name-cell.item-clickable-cell:focus-visible,
+.inventory-table .item-name-cell.item-clickable-cell:focus-visible,
+.storage-table .item-name-cell.item-clickable-cell:focus-visible {
+    outline: 2px solid #4f8bbd;
+    outline-offset: -2px;
+}
+
+.equipment-table th:nth-child(1), .inventory-table th:nth-child(1), .storage-table th:nth-child(1),
+.equipment-table td:nth-child(1), .inventory-table td:nth-child(1), .storage-table td:nth-child(1) {
+    width: 14%;
+}
+
+.equipment-table th:nth-child(2), .inventory-table th:nth-child(2), .storage-table th:nth-child(2),
+.equipment-table td:nth-child(2), .inventory-table td:nth-child(2), .storage-table td:nth-child(2) {
+    width: 40%;
+    text-align: left;
+}
+
+.equipment-table td:nth-child(2), .inventory-table td:nth-child(2), .storage-table td:nth-child(2) {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
+}
+
+.equipment-table th:nth-child(3), .inventory-table th:nth-child(3), .storage-table th:nth-child(3),
+.equipment-table td:nth-child(3), .inventory-table td:nth-child(3), .storage-table td:nth-child(3),
+.equipment-table th:nth-child(4), .inventory-table th:nth-child(4), .storage-table th:nth-child(4),
+.equipment-table td:nth-child(4), .inventory-table td:nth-child(4), .storage-table td:nth-child(4),
+.equipment-table th:nth-child(5), .inventory-table th:nth-child(5), .storage-table th:nth-child(5),
+.equipment-table td:nth-child(5), .inventory-table td:nth-child(5), .storage-table td:nth-child(5),
+.equipment-table th:nth-child(6), .inventory-table th:nth-child(6), .storage-table th:nth-child(6),
+.equipment-table td:nth-child(6), .inventory-table td:nth-child(6), .storage-table td:nth-child(6) {
+    width: 11.5%;
+}
+
+.equipment-table .item-name-cell,
+.inventory-table .item-name-cell,
+.storage-table .item-name-cell {
+    position: relative;
+    padding-right: 1.4em;
+}
+
+.equipment-table .item-name-cell.item-clickable-cell::after,
+.inventory-table .item-name-cell.item-clickable-cell::after,
+.storage-table .item-name-cell.item-clickable-cell::after {
+    content: "\203A";
+    position: absolute;
+    right: 0.5em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #4f6f8c;
+    font-weight: 800;
+    opacity: 0.85;
+}
+
+@media (max-width: 900px) {
+    #tab-container .secondary-tabs .tab-button {
+        min-width: 90px;
+        font-size: 14px;
+    }
+
+    .equipment-table th, .inventory-table th, .storage-table th {
+        padding: 0.42vh 0.2vw;
+    }
+
+    #dice-settings {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    #dice-action-buttons {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    #roll-dice-btn {
+        grid-column: auto;
+        width: 100%;
+    }
+
+    #battle #attack-method-container {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    #battle #attack-method-container label {
+        white-space: normal;
+    }
+
+    #battle #selected-skills-table {
+        font-size: 13px;
+    }
+
+    #battle #selected-skills-table th,
+    #battle #selected-skills-table td {
+        padding: 0.5vh 0.24vw;
+    }
+
+    #battle #full-power-btn,
+    #battle #skill-detail-btn,
+    #battle #skill-preset-save-btn,
+    #battle #skill-preset-load-btn,
+    #battle #clearSkillsButton {
+        height: 34px;
+        font-size: 14px;
+    }
+
+    #selected-skills-scroll {
+        border-radius: 8px;
+    }
+
+    /* #battle-container {
+        height: clamp(420px, 48vh, 540px);
+    } */
+}
+
+
+/* =================================================== */
+
+#battle-container {
+    display: flex; 
+    justify-content: space-between; /* 横並びで両端寄せ */
+    gap: 2%; /* 横方向の間隔 */
+    margin-top: 5px;
+    height: clamp(470px, 56vh, 520px);
+}
+
+
+#skill-left {
+    flex: 1; /* 讓ｪ蟷・ｒ隱ｿ謨ｴ */
+    max-width: 54%; /* 譛螟ｧ蟷・ｒ謖・ｮ・*/
+    padding: 1%;
+    background-color: #f8f8f8;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0vh;
+}
+
+#battle-left-fixed {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0vh;
+}
+
+#battle #battle-action-buttons {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 88px;
+    gap: 5px;
+    margin-top: 5px;
+    margin-bottom: 5px;
+}
+
+#selected-skills-scroll {
+    /* height: 250px; */
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border: 1px solid #d5e0ec;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    padding: 0;
+}
+
+#selected-skills-scroll::-webkit-scrollbar {
+    width: 10px;
+}
+
+#selected-skills-scroll::-webkit-scrollbar-thumb {
+    background: #8aaac7;
+    border-radius: 999px;
+    border: 2px solid #e8eff7;
+}
+
+#selected-skills-scroll::-webkit-scrollbar-track {
+    background: #edf3f9;
+    border-radius: 999px;
+}
+
+/* 戦闘画面: 全力ボタン */
+#battle #full-power-btn {
+    width: 100%;
+    height: 38px;
+    margin-top: 0;
+    margin-bottom: 0;
+    border: 1px solid #49657f;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #3c556d 0%, #2d4358 100%);
+    color: #f3f7fb;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+#battle #full-power-btn.full-power {
+    border-color: #8d5f20;
+    background: linear-gradient(180deg, #f1aa3e 0%, #d98021 100%);
+    color: #2f1400;
+    box-shadow: 0 4px 14px rgba(210, 128, 32, 0.38);
+}
+
+#battle #skill-left.full-power {
+    animation: none;
+    background-color: #f8f8f8;
+    color: inherit;
+    text-shadow: none;
+}
+
+#battle #full-power-btn:hover {
+    filter: brightness(1.06);
+    box-shadow: 0 4px 10px rgba(34, 61, 84, 0.3);
+}
+
+#battle #full-power-btn:active {
+    transform: translateY(1px);
+}
+
+/* 戦闘画面: 選択スキル表 */
+#battle #selected-skills-table {
+    width: 100%;
+    margin-top: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    border: none;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #ffffff;
+    box-shadow: none;
+    font-size: 15px;
+}
+
+#battle #selected-skills-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: linear-gradient(180deg, #295f89 0%, #214e71 100%);
+    color: #ffffff;
+    font-weight: 800;
+    padding: 0vh 0.3vw;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+    text-align: center;
+}
+
+#battle #selected-skills-table th:last-child {
+    border-right: none;
+}
+
+#battle #selected-skills-table td {
+    padding: 0vh 0.3vw;
+    border-bottom: 1px solid #e5ecf5;
+    border-right: 1px solid #edf2f7;
+    text-align: center;
+    color: #1f2937;
+    background-color: #ffffff;
+    line-height: 1.35;
+}
+
+#battle #selected-skills-table td:last-child {
+    border-right: none;
+}
+
+#battle #selected-skills-table tbody tr.skill-row-main td {
+    background-color: #ffffff;
+    height: 40px;
+}
+
+#battle #selected-skills-table tbody tr.skill-row-main:hover td {
+    background-color: #eaf4ff;
+}
+
+#battle #selected-skills-table th:nth-child(1),
+#battle #selected-skills-table td:nth-child(1) {
+    width: 35px;
+    padding-left: 2px;
+    padding-right: 2px;
+    text-align: center;
+    font-weight: 800;
+}
+
+#battle #selected-skills-table th:nth-child(2),
+#battle #selected-skills-table td:nth-child(2) {
+    width: calc(100% - 35px);
+    text-align: left;
+    font-weight: 700;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#battle #selected-skills-table .skill-name-main {
+    display: inline;
+    white-space: normal;
+}
+
+#battle #selected-skills-table .skill-name-ruby,
+#battle #selected-skills-table .skill-name-ruby rt,
+#battle #selected-skills-table .skill-name-plain {
+    white-space: normal;
+}
+
+#battle #selected-skills-table .skill-name-icons {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 0.25em;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+#battle #skill-detail-btn {
+    width: 100%;
+    height: 38px;
+    margin: 0;
+    border: 1px solid #6f879f;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #edf4fb 0%, #d6e4f2 100%);
+    color: #264865;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+#battle #skill-detail-btn:hover {
+    filter: brightness(1.03);
+    box-shadow: 0 4px 10px rgba(34, 61, 84, 0.2);
+}
+
+#battle #skill-detail-btn:active {
+    transform: translateY(1px);
+}
+
+#battle #selected-skills-table .skill-row-icon-image {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+#battle #selected-skills-table .skill-meta-label {
+    color: #2b4f70;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+}
+
+#battle #selected-skills-table .skill-meta-body {
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+#battle #selected-skills-table .skill-summary-total {
+    color: #113756;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1.3;
+}
+
+#battle #selected-skills-table .skill-summary-detail {
+    color: #2f4f69;
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 1.35;
+    margin-top: 2px;
+}
+
+#battle #selected-skills-table tfoot td {
+    position: sticky;
+    bottom: 0;
+    background: #f2f7fd;
+    color: #123451;
+    font-weight: 800;
+    border-top: 1px solid #cedaea;
+}
+
+#battle #selected-skills-table tfoot .skills-total-summary {
+    text-align: left;
+    white-space: normal;
+}
+
+#battle #selected-skills-table tfoot .skills-total-line {
+    display: block;
+    line-height: 1.3;
+}
+
+#battle #selected-skills-table tfoot .skills-total-badge {
+    display: inline-block;
+    min-width: 18px;
+    margin-right: 4px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 900;
+    color: #ffffff;
+    background: #2a4a68;
+}
+
+#battle #selected-skills-table tfoot .skills-total-extra {
+    color: #2a4a68;
+    font-weight: 700;
+}
+
+#battle #selected-skills-table tfoot .skills-total-attack-count {
+    color: #0f4f9a;
+    font-weight: 900;
+    margin-left: 6px;
+}
+
+/* 戦闘画面: 全削除ボタン */
+#battle #clearSkillsButton {
+    width: 100%;
+    height: 36px;
+    margin-top: 0.65vh;
+    border: 1px solid #b45555;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #d76868 0%, #bf4b4b 100%);
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+#battle #clearSkillsButton:hover {
+    filter: brightness(1.05);
+    box-shadow: 0 4px 10px rgba(191, 75, 75, 0.35);
+}
+
+#battle #clearSkillsButton:active {
+    transform: translateY(1px);
+}
+
+#battle #skill-preset-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45vw;
+    margin-top: 0.62vh;
+}
+
+#battle #skill-preset-save-btn,
+#battle #skill-preset-load-btn {
+    width: 100%;
+    height: 34px;
+    border: 1px solid #6f879f;
+    border-radius: 9px;
+    background: linear-gradient(180deg, #edf4fb 0%, #d6e4f2 100%);
+    color: #264865;
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+#battle #skill-preset-save-btn:hover,
+#battle #skill-preset-load-btn:hover {
+    filter: brightness(1.03);
+    box-shadow: 0 4px 10px rgba(34, 61, 84, 0.2);
+}
+
+#battle #skill-preset-save-btn:active,
+#battle #skill-preset-load-btn:active {
+    transform: translateY(1px);
+}
+
+/* 戦闘画面: 攻撃手段セレクト */
+#battle #attack-method-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 0.25vh 0;
+    /* margin-bottom: 0.7vh; */
+    padding: 0.75vh 0.65vw;
+    border: 1px solid #cfdcec;
+    border-radius: 10px;
+    background: linear-gradient(180deg, #f9fcff 0%, #edf4fb 100%);
+    box-shadow: 0 2px 8px rgba(20, 33, 61, 0.12);
+}
+
+#battle #attack-method-container label {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    color: #4f6478;
+    letter-spacing: 0.02em;
+    white-space: normal;
+}
+
+#battle #attack-method-select {
+    width: 100%;
+    height: 38px;
+    padding: 0 34px 0 10px;
+    border: 1px solid #b9c9dc;
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #1f2a37;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.2;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image:
+        linear-gradient(45deg, transparent 50%, #4f6f8c 50%),
+        linear-gradient(135deg, #4f6f8c 50%, transparent 50%);
+    background-position:
+        calc(100% - 16px) calc(50% - 2px),
+        calc(100% - 10px) calc(50% - 2px);
+    background-size: 6px 6px, 6px 6px;
+    background-repeat: no-repeat;
+}
+
+#battle #attack-method-open-button {
+    width: 100%;
+    height: 40px;
+    padding: 0 10px;
+    border: 1px solid #7da1c4;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #eef5fc 0%, #dce9f6 100%);
+    color: #163b5a;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.1;
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+}
+
+#battle #attack-method-open-button .attack-method-trigger-key {
+    font-size: 10px;
+    font-weight: 700;
+    color: #4f6478;
+    line-height: 1;
+}
+
+#battle #attack-method-open-button .attack-method-trigger-value {
+    font-size: 16px;
+    font-weight: 800;
+    color: #163b5a;
+    line-height: 1.1;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#battle #attack-method-open-button:focus-visible {
+    outline: none;
+    border-color: #5f8eb8;
+    box-shadow: 0 0 0 3px rgba(95, 142, 184, 0.22);
+}
+
+#battle #attack-method-open-button:hover {
+    filter: brightness(1.03);
+}
+
+#battle #attack-method-open-button:active {
+    transform: translateY(1px);
+}
+
+#battle #attack-method-select {
+    display: none;
+}
+
+#battle #attack-method-select:focus-visible {
+    outline: none;
+    border-color: #4f8bbd;
+    box-shadow: 0 0 0 3px rgba(79, 139, 189, 0.22);
+}
+
+.attack-method-picker-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2350;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.38);
+}
+
+.attack-method-picker-modal.is-open {
+    display: flex;
+}
+
+.attack-method-picker-content {
+    width: min(92vw, 520px);
+    max-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #bfcfe0;
+    border-radius: 10px;
+    background: #f9fcff;
+    box-shadow: 0 12px 30px rgba(10, 33, 56, 0.35);
+}
+
+.attack-method-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid #d7e2ef;
+    padding: 10px 12px;
+}
+
+.attack-method-picker-header h3 {
+    margin: 0;
+    font-size: 18px;
+    color: #1f3e5b;
+}
+
+.attack-method-picker-close {
+    width: 30px;
+    height: 30px;
+    border: 1px solid #c3d0df;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #23445f;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.attack-method-picker-list {
+    padding: 8px;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.attack-method-picker-option {
+    width: 100%;
+    min-height: 36px;
+    border: 1px solid #c1d0e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #173955;
+    font-size: 15px;
+    font-weight: 700;
+    text-align: left;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.attack-method-picker-option.is-selected {
+    border-color: #5f8eb8;
+    background: #e9f3fd;
+    box-shadow: inset 0 0 0 1px #8cb4d6;
+}
+
+.attack-method-picker-option:hover {
+    background: #eef6ff;
+}
+
+
+#dice-right {
+    flex: 1; /* 讓ｪ蟷・ｒ隱ｿ謨ｴ */
+    max-width: 46%; /* 譛螟ｧ蟷・ｒ謖・ｮ・*/
+    display: flex;
+    flex-direction: column; /* 縦並び */
+    gap: 0.8vh;
+    height: 100%;
+    min-width: 0;
+}
+
+#dice-results {
+    flex: 1;
+}
+
+/* =============================== */
+
+#levels {
+    padding: 0.2vh 0.4vw;
+}
+
+#levels h2 {
+    margin: 0.2vh 0 0.8vh;
+    padding-left: 0.2vw;
+    font-size: 20px;
+    color: #1f2937;
+}
+
+#levels-table-wrap {
+    width: 100%;
+    max-height: 46.5vh;
+    /* max-height: 36.5vh; */
+    overflow: auto;
+    border: 1px solid #d5dee8;
+    border-radius: 0.8vh;
+    background-color: #f8fafc;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+#levels-table {
+    --levels-col-profession: 110px;
+    --levels-col-numeric: 31px;
+    width: 100%;
+    min-width: 480px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+    font-size: 13px;
+    color: #1f2937;
+    margin: 0;
+}
+
+#levels-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: linear-gradient(180deg, #1f6e5f 0%, #18584c 100%);
+    color: #ffffff;
+    font-weight: 700;
+    text-align: center;
+    padding: 0.55vh 0.25vw;
+    border-bottom: 1px solid #123f37;
+    border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+#levels-table tbody td {
+    text-align: center;
+    padding: 0.45vh 0.25vw;
+    border-bottom: 1px solid #e3eaf2;
+    border-right: 1px solid #e7edf4;
+    background-color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#levels-table tbody tr:nth-child(even) td {
+    background-color: #f6f9fc;
+}
+
+#levels-table tbody tr:hover td {
+    background-color: #edf6ff;
+}
+
+#levels-table .profession-column {
+    width: var(--levels-col-profession);
+    min-width: var(--levels-col-profession);
+    text-align: left;
+    font-weight: 700;
+    padding-left: 2px;
+    padding-right: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#levels-table .small-column {
+    width: var(--levels-col-numeric);
+    min-width: var(--levels-col-numeric);
+    padding-left: 0;
+    padding-right: 0;
+    text-align: center;
+}
+
+#levels-table .profession-column-sticky,
+#levels-table .lv-column,
+#levels-table .ef-column {
+    position: sticky;
+    background-clip: padding-box;
+    z-index: 3;
+}
+
+#levels-table .profession-column-sticky {
+    left: 0;
+}
+
+#levels-table .lv-column {
+    left: var(--levels-col-profession);
+}
+
+#levels-table .ef-column {
+    left: calc(var(--levels-col-profession) + var(--levels-col-numeric));
+}
+
+#levels-table thead .profession-column-sticky,
+#levels-table thead .lv-column,
+#levels-table thead .ef-column {
+    z-index: 8;
+}
+
+#levels-table tbody td.profession-column-sticky,
+#levels-table tbody td.lv-column,
+#levels-table tbody td.ef-column {
+    background-color: #ffffff;
+}
+
+#levels-table tbody tr:nth-child(even) td.profession-column-sticky,
+#levels-table tbody tr:nth-child(even) td.lv-column,
+#levels-table tbody tr:nth-child(even) td.ef-column {
+    background-color: #f6f9fc;
+}
+
+#levels-table tbody tr:hover td.profession-column-sticky,
+#levels-table tbody tr:hover td.lv-column,
+#levels-table tbody tr:hover td.ef-column {
+    background-color: #edf6ff;
+}
+
+#levels-table-wrap::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+#levels-table-wrap::-webkit-scrollbar-thumb {
+    background-color: var(--tab-scroll-thumb);
+    border-radius: 999px;
+    border: 2px solid var(--tab-scroll-thumb-border);
+}
+
+

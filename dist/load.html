@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ロード画面</title>
+    <style>
+        /* 全体のリセット */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* ロード画面の全体スタイル */
+        body, html {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: url('/assets/back-tree-low-ds8LqLxT.png') no-repeat center center fixed; /* 背景画像を指定 */
+            background-size: cover;
+        }
+
+        /* ロード画面全体のスタイル */
+        .loading-screen {
+            position: relative;
+            width: 1200px;
+            height: 1200px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            backdrop-filter: blur(5px); /* 背景を少しぼかしてロード画面を引き立てる */
+            overflow: hidden;
+        }
+
+        /* 光の玉のスタイル */
+        .light-ball {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.1));
+            animation: float linear infinite;
+            opacity: 0.7;
+        }
+
+        /* ロード中テキストのスタイル */
+        .loading-text {
+            color: #ffffff;
+            font-size: 1.5em;
+            margin-top: 20px;
+            z-index: 1;
+        }
+
+        /* 光の玉が中央から上に向かって自然に浮遊するアニメーション */
+        @keyframes float {
+            0% { 
+                transform: translateY(100vh) translateX(0); /* 画面の下からスタート */
+                opacity: 0; /* 徐々に表示 */
+            }
+            10% {
+                opacity: 1;
+            }
+            100% { 
+                transform: translateY(-100vh) translateX(calc(-50px + 100px * var(--random-x)));
+                opacity: 0; /* 上部でフェードアウト */
+            }
+        }
+
+        /* 各光の玉のアニメーション速度と位置をランダムに調整 */
+        .light-ball:nth-child(1) { left: 5%; animation-duration: 10s; --random-x: -1; }
+        .light-ball:nth-child(2) { left: 15%; animation-duration: 12s; --random-x: 0.5; }
+        .light-ball:nth-child(3) { left: 25%; animation-duration: 8s; --random-x: -0.5; }
+        .light-ball:nth-child(4) { left: 35%; animation-duration: 14s; --random-x: 1; }
+        .light-ball:nth-child(5) { left: 45%; animation-duration: 6s; --random-x: 0.2; }
+        .light-ball:nth-child(6) { left: 55%; animation-duration: 16s; --random-x: -1; }
+        .light-ball:nth-child(7) { left: 65%; animation-duration: 11s; --random-x: 0.8; }
+        .light-ball:nth-child(8) { left: 75%; animation-duration: 9s; --random-x: -0.6; }
+        .light-ball:nth-child(9) { left: 85%; animation-duration: 15s; --random-x: 0.3; }
+        .light-ball:nth-child(10) { left: 95%; animation-duration: 7s; --random-x: -0.4; }
+
+    </style>
+</head>
+<body>
+    <div class="loading-screen">
+        <div class="loading-text">ロード中...</div>
+
+        <!-- 複数の光の玉を配置 -->
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+        <div class="light-ball"></div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,222 @@
+[2026-02-21T16:57:10.081Z] log-mlwkab41-ndh6me
+name: ドゥンケルハイト
+attackOption: 武器
+fullPower: 0
+skills: A:貫通, S:闇の翼, Q1:虚ろの魔眼, Q2:, M:
+rollResults: 86
+raw: {"name":"ドゥンケルハイト","attackOption":"武器","fullPower":0,"skills":[{"slot":"A","name":"貫通"},{"slot":"S","name":"闇の翼"},{"slot":"Q1","name":"虚ろの魔眼"},{"slot":"Q2","name":""},{"slot":"M","name":""}],"rollResults":[86]}
+
+[2026-02-21T17:01:04.309Z] log-mlwkfbud-xbryn3
+name: ドゥンケルハイト
+attackOption: 武器
+fullPower: 0
+skills: A:貫通, S:闇の翼, Q1:虚ろの魔眼, Q2:, M:
+rollResults: 95
+raw: {"name":"ドゥンケルハイト","attackOption":"武器","fullPower":0,"skills":[{"slot":"A","name":"貫通"},{"slot":"S","name":"闇の翼"},{"slot":"Q1","name":"虚ろの魔眼"},{"slot":"Q2","name":""},{"slot":"M","name":""}],"rollResults":[95]}
+
+2026-02-21T17:03:15.103Z	log-mlwki4rj-6mtp67	ドゥンケルハイト		0	虚無の吐息/直線	影化				1
+ドゥンケルハイト
+
+0
+転移の扉
+握りつぶす
+影纏い
+影変形
+
+48
+
+timestamp	2026-02-21T17:11:01.962Z
+requestId	log-mlwks4zu-xxkxqe
+ドゥンケルハイト
+武器
+0
+貫通
+影潜み
+看破の目
+
+81
+
+timestamp	2026-02-21T17:16:25.903Z
+requestId	log-mlwkz2y7-eca2p9
+ドゥンケルハイト
+武器
+0
+貫通
+影潜み
+看破の目
+
+48	14	24	70	45	100	93	26	40	36
+
+timestamp	2026-02-21T17:16:35.061Z
+requestId	log-mlwkza0l-xhpyxl
+ドゥンケルハイト
+武器
+0
+貫通
+影潜み
+看破の目
+
+73	28	17	17	98	95	57	9	83
+
+timestamp	2026-02-22T06:32:26.944Z
+requestId	log-mlxderls-rir1hv
+ドゥンケルハイト
+
+0
+
+73
+
+timestamp	2026-02-22T19:06:25.394Z
+requestId	log-mly4cdte-u6mydu
+リコリス
+武器
+0
+
+22	80	38	84	66
+
+timestamp	2026-02-23T02:29:49.584Z
+requestId	log-mlyk6lqo-dy30ll
+ドゥンケルハイト
+爪
+0
+転位門
+
+60
+
+timestamp	2026-02-23T02:30:15.313Z
+requestId	log-mlyk75ld-kxzsre
+ドゥンケルハイト
+爪
+0
+暗黒は全てを朽ち果てさせる
+闇の翼
+転位門
+
+54
+
+timestamp	2026-02-23T08:15:26.107Z
+requestId	log-mlywj257-96htb7
+ドゥンケルハイト
+羽
+0
+切断
+闇の翼
+
+1	15
+
+timestamp	2026-02-23T08:29:24.260Z
+requestId	log-mlyx10v8-evy9n7
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+24
+
+timestamp	2026-02-23T08:29:30.614Z
+requestId	log-mlyx15rq-okbe4v
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+69
+
+timestamp	2026-02-23T09:27:35.006Z
+requestId	log-mlyz3uce-l1vna0
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+20
+
+timestamp	2026-02-23T09:27:54.627Z
+requestId	log-mlyz49hf-0b3rh5
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+84
+
+timestamp	2026-02-23T09:33:11.108Z
+requestId	log-mlyzb1ok-5v0lsq
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+31
+
+timestamp	2026-02-23T09:34:36.702Z
+requestId	log-mlyzcvq6-x1g5eg
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+73
+
+timestamp	2026-02-23T09:35:39.030Z
+requestId	log-mlyze7ti-1fwdf3
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+75
+
+timestamp	2026-02-23T09:39:06.412Z
+requestId	log-mlyzinu4-l1rzr8
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+27
+
+timestamp	2026-02-23T09:42:38.568Z
+requestId	log-mlyzn7jc-7ce5sz
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+23
+
+timestamp	2026-02-23T09:43:47.849Z
+requestId	log-mlyzoozt-vgbwux
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+66
+
+timestamp	2026-02-23T09:46:46.838Z
+requestId	log-mlyzsj3q-ucteg5
+ドゥンケルハイト
+爪
+0
+闇の翼
+
+12
+
+timestamp	2026-02-23T14:40:33.653Z
+requestId	log-mlzaac1h-qkjft4
+ドゥンケルハイト
+爪
+0
+
+72
+
+timestamp	2026-02-23T15:48:41.062Z
+requestId	log-mlzcpxwm-bhx2jz
+ドゥンケルハイト
+爪
+0
+剛爪
+
+10
+

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>キャラクター選択 - TRPG</title>
+  <link rel="stylesheet" crossorigin href="/assets/index-CvM__GTB.css">
+</head>
+<body>
+    <!-- ログイン画面 -->
+    <div id="login-container">
+        <h1>ログイン</h1>
+        <input type="text" id="username" placeholder="ユーザー名">
+        <input type="password" id="password" placeholder="パスワード">
+        <button id="login-button">ログイン</button>
+        <p id="error-message" style="color: red; display: none;"></p>
+    </div>
+
+    <!-- メイン画面（ログイン後に表示） -->
+    <div id="main-container" style="display: none;">
+        <!-- キャラクター一覧 -->
+        <div id="character-list-container">
+            <h2>キャラクター一覧</h2>
+            <button id="start-story-button" onclick="startStoryButton()" disabled>ストーリーを始める</button> <!-- ログイン後に表示 -->
+            <ul id="character-list"></ul>
+        </div>
+
+        <!-- キャラクターのステータス表示 -->
+        <aside id="character-sidebar">
+            <h2>キャラクターステータス</h2>
+            <table id="character-stats"></table>
+        </aside>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
