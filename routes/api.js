@@ -43,7 +43,10 @@ const FIELD_KEYS = {
     magic: ['魔力'],
     magicDefense: ['魔防'],
     speed: ['速度'],
-    hit: ['命中']
+    hit: ['命中'],
+    items: ['持ち物', '所持品'],
+    money: ['所持金'],
+    memo: ['メモ', '備考']
 };
 
 function sanitizeTsvValue(value) {
@@ -792,9 +795,21 @@ router.post('/login', (req, res) => {
         return res.status(401).send({ message: 'invalid id or password' });
     }
 
+    const characterSlots = Object.keys(user)
+        .map((key) => {
+            const match = String(key).match(/^character(\d+)$/i);
+            if (!match) return null;
+            return {
+                key,
+                order: Number(match[1])
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.order - b.order);
+
     const characters = [];
-    for (let i = 1; i <= 20; i++) {
-        const characterName = user[`character${i}`];
+    for (const slot of characterSlots) {
+        const characterName = user[slot.key];
         if (!characterName) continue;
 
         const characterData = cachedCharacters.find(
@@ -818,7 +833,10 @@ router.post('/login', (req, res) => {
             命中: pickFirstValue(characterData, FIELD_KEYS.hit),
             SIZ: characterData.SIZ,
             APP: characterData.APP,
-            能力値: pickFirstValue(characterData, FIELD_KEYS.ability)
+            能力値: pickFirstValue(characterData, FIELD_KEYS.ability),
+            持ち物: pickFirstValue(characterData, FIELD_KEYS.items),
+            所持金: pickFirstValue(characterData, FIELD_KEYS.money),
+            メモ: pickFirstValue(characterData, FIELD_KEYS.memo)
         });
     }
 

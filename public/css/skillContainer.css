@@ -548,28 +548,28 @@
 
 
 #skill-tables::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--app-scrollbar-size, 10px);
+  height: var(--app-scrollbar-size, 10px);
 }
 
 #skill-tables::-webkit-scrollbar-track {
-  background-color: #edf3f9;
+  background-color: var(--app-scrollbar-track, #eaf1fa);
   border-radius: 999px;
 }
 
 #skill-tables::-webkit-scrollbar-thumb {
-  background-color: #8aaac7;
+  background-color: var(--app-scrollbar-thumb, #90aace);
   border-radius: 999px;
-  border: 2px solid #e8eff7;
+  border: 2px solid var(--app-scrollbar-thumb-border, #eaf1fa);
 }
 
 #skill-tables::-webkit-scrollbar-thumb:hover {
-  background-color: #6f93b6;
+  background-color: var(--app-scrollbar-thumb-hover, #7e99bf);
 }
 
 #skill-tables {
   scrollbar-width: thin;
-  scrollbar-color: #8aaac7 #edf3f9;
+  scrollbar-color: var(--app-scrollbar-thumb, #90aace) var(--app-scrollbar-track, #eaf1fa);
 }
 
 

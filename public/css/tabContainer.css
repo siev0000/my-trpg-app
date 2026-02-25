@@ -18,10 +18,10 @@
     --tab-main-active-text: #ffffff;
     --tab-sub-active-bg: #2f855a;
     --tab-text: #2f3a45;
-    --tab-scroll-track: #edf3f9;
-    --tab-scroll-thumb: #8aaac7;
-    --tab-scroll-thumb-hover: #6f93b6;
-    --tab-scroll-thumb-border: #e8eff7;
+    --tab-scroll-track: var(--app-scrollbar-track, #eaf1fa);
+    --tab-scroll-thumb: var(--app-scrollbar-thumb, #90aace);
+    --tab-scroll-thumb-hover: var(--app-scrollbar-thumb-hover, #7e99bf);
+    --tab-scroll-thumb-border: var(--app-scrollbar-thumb-border, #eaf1fa);
 }
 
 #tab-container .tab-menu {
@@ -37,7 +37,7 @@
 }
 
 #tab-container .tab-menu::-webkit-scrollbar {
-    height: 6px;
+    height: var(--app-scrollbar-size, 10px);
 }
 
 #tab-container .tab-menu::-webkit-scrollbar-thumb {
@@ -146,11 +146,12 @@
 
 #tab-container .main-tabs .memo-open-button {
     flex: 0 0 auto;
-    width: 88px;
-    min-width: 88px;
+    width: 35px;
+    min-width: 35px;
     padding-inline: 0;
     background: linear-gradient(180deg, #f5f9ff 0%, #e7eef8 100%);
     border-color: #b6c7da;
+    left: 20px;
 }
 
 #tab-container .main-tabs .memo-open-button:hover {
@@ -217,7 +218,7 @@
 
 #stats-container {
     display: flex;
-    gap: 0.6vh;
+    gap: 6px;
     background-color: #f5f5f5;
     height: 440px; /* 各カテゴリの表示領域 */
 }
@@ -307,6 +308,7 @@
 .stats-table .value-wrap {
     position: relative;
     min-height: 1.9em;
+    left: 7px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1000,17 +1002,17 @@
 }
 
 .dice-log-list::-webkit-scrollbar {
-    width: 9px;
+    width: var(--app-scrollbar-size, 10px);
 }
 
 .dice-log-list::-webkit-scrollbar-thumb {
-    background: #8aaac7;
+    background: var(--tab-scroll-thumb);
     border-radius: 999px;
-    border: 2px solid #e8eff7;
+    border: 2px solid var(--tab-scroll-thumb-border);
 }
 
 .dice-log-list::-webkit-scrollbar-track {
-    background: #edf3f9;
+    background: var(--tab-scroll-track);
     border-radius: 999px;
 }
 
@@ -1360,17 +1362,17 @@
 }
 
 #selected-skills-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: var(--app-scrollbar-size, 10px);
 }
 
 #selected-skills-scroll::-webkit-scrollbar-thumb {
-    background: #8aaac7;
+    background: var(--tab-scroll-thumb);
     border-radius: 999px;
-    border: 2px solid #e8eff7;
+    border: 2px solid var(--tab-scroll-thumb-border);
 }
 
 #selected-skills-scroll::-webkit-scrollbar-track {
-    background: #edf3f9;
+    background: var(--tab-scroll-track);
     border-radius: 999px;
 }
 
@@ -1488,8 +1490,14 @@
 }
 
 #battle #selected-skills-table .skill-name-main {
-    display: inline;
+    display: inline-flex;
+    align-items: center;
     white-space: normal;
+    vertical-align: middle;
+}
+
+#battle #selected-skills-table td.skill-name {
+    vertical-align: middle;
 }
 
 #battle #selected-skills-table .skill-name-ruby,
@@ -1502,9 +1510,14 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    margin-left: 0.25em;
+    margin-right: 0.25em;
     white-space: nowrap;
     vertical-align: middle;
+}
+
+#battle #selected-skills-table .skill-name-icons:empty {
+    display: none;
+    margin-right: 0;
 }
 
 #battle #skill-detail-btn {
@@ -1532,8 +1545,8 @@
 }
 
 #battle #selected-skills-table .skill-row-icon-image {
-    width: 18px;
-    height: 18px;
+    width: 35px;
+    height: 35px;
     object-fit: contain;
     vertical-align: middle;
 }
@@ -1885,9 +1898,45 @@
     color: #1f2937;
 }
 
+#levels .levels-view-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 0.6vh;
+}
+
+#levels .levels-view-tab {
+    appearance: none;
+    border: 1px solid #92a8bd;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #f6f9fd 0%, #e6edf6 100%);
+    color: #294765;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.2;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: filter 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+#levels .levels-view-tab:hover {
+    filter: brightness(1.02);
+    box-shadow: 0 2px 6px rgba(36, 69, 101, 0.18);
+}
+
+#levels .levels-view-tab:active {
+    transform: translateY(1px);
+}
+
+#levels .levels-view-tab.active {
+    border-color: #2b5f8d;
+    background: linear-gradient(180deg, #2f74a8 0%, #255f8c 100%);
+    color: #ffffff;
+}
+
 #levels-table-wrap {
     width: 100%;
-    max-height: 46.5vh;
+    max-height: 440px;
     /* max-height: 36.5vh; */
     overflow: auto;
     border: 1px solid #d5dee8;
@@ -1948,8 +1997,13 @@
     font-weight: 700;
     padding-left: 2px;
     padding-right: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
+    overflow: visible;
+    text-overflow: clip;
+    vertical-align: top;
 }
 
 #levels-table .small-column {

@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
     overflow: auto;
     padding-right: 2px;
     scrollbar-width: thin;
-    scrollbar-color: #b99656 #2b2b2b;
+    scrollbar-color: var(--app-scrollbar-thumb, #90aace) var(--app-scrollbar-track, #eaf1fa);
 }
 
 .equip-compare-line {
@@ -368,21 +368,21 @@ onBeforeUnmount(() => {
 }
 
 .equip-compare-lines-scroll::-webkit-scrollbar {
-    width: 10px;
+    width: var(--app-scrollbar-size, 10px);
 }
 
 .equip-compare-lines-scroll::-webkit-scrollbar-track {
-    background: #2b2b2b;
+    background: var(--app-scrollbar-track, #eaf1fa);
     border-radius: 999px;
 }
 
 .equip-compare-lines-scroll::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #d1b476 0%, #b99656 100%);
-    border: 2px solid #2b2b2b;
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-start, #b3c8e2) 0%, var(--app-scrollbar-thumb, #90aace) 100%);
+    border: 2px solid var(--app-scrollbar-thumb-border, #eaf1fa);
     border-radius: 999px;
 }
 
 .equip-compare-lines-scroll::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #e4c98e 0%, #c7a765 100%);
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-hover-start, #9fb9d8) 0%, var(--app-scrollbar-thumb-hover, #7e99bf) 100%);
 }
 </style>

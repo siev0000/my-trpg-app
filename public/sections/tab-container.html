@@ -12,7 +12,7 @@
             <button class="tab-button" onclick="openTab('levels', this)">レベル一覧</button>
             <button class="tab-button" onclick="openTab('items', this)">アイテム</button>
             <button class="tab-button" onclick="openTab('battle', this)">戦闘画面</button>
-            <button class="tab-button memo-open-button" type="button" onclick="openBattleMemoModal()">メモ</button>
+            <button class="tab-button memo-open-button" type="button" onclick="openBattleMemoModal()">📝</button>
         </div>
 
 
@@ -55,14 +55,13 @@
         <!-- 他のメインタブコンテンツ -->
         <div id="levels" class="tab-content">
             <h2>レベル一覧</h2>
-            <!-- 表示切り替えボタン -->
-            <!-- <div id="toggle-buttons">
-                <button onclick="changeKeys('basic')">基本情報</button>
-                <button onclick="changeKeys('combat')">戦闘ステータス</button>
-                <button onclick="changeKeys('elements')">属性ステータス</button>
-                <button onclick="changeKeys('status')">ステータス耐性</button>
-                <button onclick="changeKeys('weaknesses')">弱点・スキル</button>
-            </div>             -->
+            <div id="levels-view-tabs" class="levels-view-tabs" role="tablist" aria-label="レベル一覧表示切替">
+                <button type="button" class="levels-view-tab active" data-levels-view="status" onclick="changeLevelsTableView('status', this)">ステータス</button>
+                <button type="button" class="levels-view-tab" data-levels-view="resistance" onclick="changeLevelsTableView('resistance', this)">耐性</button>
+                <button type="button" class="levels-view-tab" data-levels-view="body" onclick="changeLevelsTableView('body', this)">肉体</button>
+                <button type="button" class="levels-view-tab" data-levels-view="talent" onclick="changeLevelsTableView('talent', this)">技能</button>
+                <button type="button" class="levels-view-tab" data-levels-view="skill" onclick="changeLevelsTableView('skill', this)">スキル</button>
+            </div>
             <div id="levels-table-wrap">
                 <table id="levels-table" border="1">
                     <thead>

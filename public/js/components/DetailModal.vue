@@ -2047,7 +2047,7 @@ onBeforeUnmount(() => {
     overflow: auto;
     padding-right: 2px;
     scrollbar-width: thin;
-    scrollbar-color: #b99656 #2b2b2b;
+    scrollbar-color: var(--app-scrollbar-thumb, #90aace) var(--app-scrollbar-track, #eaf1fa);
 }
 
 .item-hero-subtitle {
@@ -2270,7 +2270,7 @@ onBeforeUnmount(() => {
     gap: 8px 12px;
     padding-bottom: 2px;
     scrollbar-width: thin;
-    scrollbar-color: #b99656 #2b2b2b;
+    scrollbar-color: var(--app-scrollbar-thumb, #90aace) var(--app-scrollbar-track, #eaf1fa);
 }
 
 .penalty-inline-list .item-stat-inline-item {
@@ -2312,49 +2312,49 @@ onBeforeUnmount(() => {
     color: #f0dbab;
     pointer-events: auto;
     scrollbar-width: thin;
-    scrollbar-color: #b99656 #2b2b2b;
+    scrollbar-color: var(--app-scrollbar-thumb, #90aace) var(--app-scrollbar-track, #eaf1fa);
 }
 
 .item-scroll-area::-webkit-scrollbar,
 .item-skill-hover-panel::-webkit-scrollbar {
-    width: 10px;
+    width: var(--app-scrollbar-size, 10px);
 }
 
 .item-scroll-area::-webkit-scrollbar-track,
 .item-skill-hover-panel::-webkit-scrollbar-track {
-    background: #2b2b2b;
+    background: var(--app-scrollbar-track, #eaf1fa);
     border-radius: 999px;
 }
 
 .item-scroll-area::-webkit-scrollbar-thumb,
 .item-skill-hover-panel::-webkit-scrollbar-thumb {
-    background: linear-gradient(180deg, #d1b476 0%, #b99656 100%);
-    border: 2px solid #2b2b2b;
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-start, #b3c8e2) 0%, var(--app-scrollbar-thumb, #90aace) 100%);
+    border: 2px solid var(--app-scrollbar-thumb-border, #eaf1fa);
     border-radius: 999px;
 }
 
 .item-scroll-area::-webkit-scrollbar-thumb:hover,
 .item-skill-hover-panel::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(180deg, #e4c98e 0%, #c7a765 100%);
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-hover-start, #9fb9d8) 0%, var(--app-scrollbar-thumb-hover, #7e99bf) 100%);
 }
 
 .penalty-inline-list::-webkit-scrollbar {
-    height: 8px;
+    height: var(--app-scrollbar-size, 10px);
 }
 
 .penalty-inline-list::-webkit-scrollbar-track {
-    background: #2b2b2b;
+    background: var(--app-scrollbar-track, #eaf1fa);
     border-radius: 999px;
 }
 
 .penalty-inline-list::-webkit-scrollbar-thumb {
-    background: linear-gradient(90deg, #d1b476 0%, #b99656 100%);
-    border: 1px solid #2b2b2b;
+    background: linear-gradient(90deg, var(--app-scrollbar-thumb-start, #b3c8e2) 0%, var(--app-scrollbar-thumb, #90aace) 100%);
+    border: 1px solid var(--app-scrollbar-thumb-border, #eaf1fa);
     border-radius: 999px;
 }
 
 .penalty-inline-list::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(90deg, #e4c98e 0%, #c7a765 100%);
+    background: linear-gradient(90deg, var(--app-scrollbar-thumb-hover-start, #9fb9d8) 0%, var(--app-scrollbar-thumb-hover, #7e99bf) 100%);
 }
 
 .item-skill-hover-title {

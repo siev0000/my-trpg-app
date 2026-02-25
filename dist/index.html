@@ -2,33 +2,80 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>キャラクター選択 - TRPG</title>
-  <link rel="stylesheet" crossorigin href="/assets/index-CvM__GTB.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>キャラクター選択 - TRPG</title>
+  <link rel="stylesheet" crossorigin href="/assets/index-BtGur6gh.css">
 </head>
 <body>
-    <!-- ログイン画面 -->
-    <div id="login-container">
-        <h1>ログイン</h1>
-        <input type="text" id="username" placeholder="ユーザー名">
-        <input type="password" id="password" placeholder="パスワード">
-        <button id="login-button">ログイン</button>
-        <p id="error-message" style="color: red; display: none;"></p>
-    </div>
+    <div id="app-scale-root">
+        <div id="app-frame">
+            <!-- ログイン画面 -->
+            <div id="login-container">
+                <div class="login-header">
+                    <p class="login-kicker">TRPG SESSION</p>
+                    <h1>ログイン</h1>
+                    <p class="login-description">プレイヤー情報を入力してください</p>
+                </div>
+                <label class="login-field">
+                    <span>ユーザー名</span>
+                    <input type="text" id="username" placeholder="ユーザー名" autocomplete="username">
+                </label>
+                <label class="login-field">
+                    <span>パスワード</span>
+                    <input type="password" id="password" placeholder="パスワード" autocomplete="current-password">
+                </label>
+                <button id="login-button" type="button">ログイン</button>
+                <p id="error-message" aria-live="polite"></p>
+            </div>
 
-    <!-- メイン画面（ログイン後に表示） -->
-    <div id="main-container" style="display: none;">
-        <!-- キャラクター一覧 -->
-        <div id="character-list-container">
-            <h2>キャラクター一覧</h2>
-            <button id="start-story-button" onclick="startStoryButton()" disabled>ストーリーを始める</button> <!-- ログイン後に表示 -->
-            <ul id="character-list"></ul>
+            <!-- メイン画面（ログイン後に表示） -->
+            <div id="main-container" class="is-hidden">
+                <!-- キャラクター一覧 -->
+                <div id="character-list-container">
+                    <h2 class="character-list-title">
+                        キャラクター一覧
+                        <span id="character-select-count" class="character-select-count">0/0</span>
+                    </h2>
+                    <button id="start-story-button" disabled>ストーリーを始める</button>
+                    <div class="character-list-scroll">
+                        <ul id="character-list"></ul>
+                    </div>
+                </div>
+
+                <!-- キャラクターのステータス表示 -->
+                <aside id="character-sidebar">
+                    <div class="character-sidebar-header">
+                        <h2 id="character-sidebar-title">キャラクター未選択</h2>
+                        <div class="character-sidebar-tabs" role="tablist" aria-label="キャラクター情報タブ">
+                            <button type="button" class="character-sidebar-tab is-active" data-sidebar-tab="status" role="tab" aria-selected="true">ステータス</button>
+                            <button type="button" class="character-sidebar-tab" data-sidebar-tab="items" role="tab" aria-selected="false">持ち物</button>
+                            <button type="button" class="character-sidebar-tab" data-sidebar-tab="memo" role="tab" aria-selected="false">メモ</button>
+                        </div>
+                    </div>
+
+                    <div id="character-sidebar-panels">
+                        <section class="character-sidebar-panel is-active" data-sidebar-panel="status" role="tabpanel">
+                            <div class="character-status-view-header" role="tablist" aria-label="ステータス表示切替">
+                                <button type="button" class="character-status-view-tab is-active" data-status-view="table" aria-selected="true">表</button>
+                                <button type="button" class="character-status-view-tab" data-status-view="radar" aria-selected="false">円グラフ</button>
+                            </div>
+                            <div class="character-stats-view is-active" data-status-view-panel="table">
+                                <table id="character-stats"></table>
+                            </div>
+                            <div class="character-stats-view" data-status-view-panel="radar" hidden>
+                                <div id="character-stats-radar"></div>
+                            </div>
+                        </section>
+                        <section class="character-sidebar-panel" data-sidebar-panel="items" role="tabpanel" hidden>
+                            <div id="character-items-panel"></div>
+                        </section>
+                        <section class="character-sidebar-panel" data-sidebar-panel="memo" role="tabpanel" hidden>
+                            <div id="character-memo-panel"></div>
+                        </section>
+                    </div>
+                </aside>
+            </div>
         </div>
-
-        <!-- キャラクターのステータス表示 -->
-        <aside id="character-sidebar">
-            <h2>キャラクターステータス</h2>
-            <table id="character-stats"></table>
-        </aside>
     </div>
 
     <script src="app.js"></script>

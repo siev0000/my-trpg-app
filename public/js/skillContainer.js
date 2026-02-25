@@ -1052,6 +1052,19 @@ function getWeaponAttackOptionData(options = attackOptions) {
         || null;
 }
 
+function getEquippedWeaponAttackOptionData(options = attackOptions) {
+    const weaponValues = ["武器", "武器2", "武器3"];
+    for (const value of weaponValues) {
+        const option = getAttackOptionByValue(value, options);
+        const raw = option?.総合;
+        const rawName = normalizeBattleText(raw?.名前 || raw?.name);
+        if (rawName) {
+            return option;
+        }
+    }
+    return null;
+}
+
 function getBodyAttackOptionData(options = attackOptions) {
     return BODY_ATTACK_OPTION_VALUES
         .map((value) => getAttackOptionByValue(value, options))
@@ -1088,9 +1101,9 @@ function pickBestBodyAttackOption(options = attackOptions) {
 }
 
 function getDefaultAttackOptionValue(options = attackOptions) {
-    const weapon = getWeaponAttackOptionData(options);
-    if (hasAttackOptionData(weapon)) {
-        return normalizeBattleText(weapon?.value);
+    const equippedWeapon = getEquippedWeaponAttackOptionData(options);
+    if (equippedWeapon) {
+        return normalizeBattleText(equippedWeapon?.value);
     }
     const bestBody = pickBestBodyAttackOption(options);
     if (bestBody) {
@@ -1899,6 +1912,7 @@ function updateFullPowerModeUI() {
 
 async function setFullPowerMode(nextEnabled, options = {}) {
     const refreshSelected = options?.refreshSelected !== false;
+    const refreshStatus = options?.refreshStatus !== false;
     const nextState = Boolean(nextEnabled);
     const changed = isFullPower !== nextState;
     isFullPower = nextState;
@@ -1908,6 +1922,9 @@ async function setFullPowerMode(nextEnabled, options = {}) {
     }
     if (refreshSelected) {
         await updateSelectedSkills();
+    }
+    if (changed && refreshStatus && typeof refreshTopRightStatusContainer === "function") {
+        await refreshTopRightStatusContainer();
     }
 }
 
@@ -2237,6 +2254,8 @@ async function applySkillSetPresetPayload(payload = {}) {
             ));
         const nextAttackMethod = hasMethodOption ? requestedAttackMethod : "";
         selectElement.value = nextAttackMethod;
+        selectElement.dataset.attackMethodOwner = normalizeBattleText(getCharacterScopedKey());
+        selectElement.dataset.attackMethodUserSelected = nextAttackMethod ? "1" : "0";
         saveCurrentAttackOptionForCharacter(nextAttackMethod);
         updateAttackMethodTriggerLabel(nextAttackMethod);
     } else if (requestedAttackMethod) {
@@ -2967,6 +2986,11 @@ function getSkillValueFormulaApi() {
     return (api && typeof api === "object") ? api : null;
 }
 
+function getSkillPowerJudgeApi() {
+    const api = window.skillPowerJudge;
+    return (api && typeof api === "object") ? api : null;
+}
+
 function getFirstFiniteNumberByKeys(source, keys = [], fallback = 0) {
     const target = (source && typeof source === "object") ? source : {};
     for (const key of keys) {
@@ -3000,6 +3024,10 @@ function toDisplayText(value) {
 }
 
 function resolveAllPowerMultiplier(skillData) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.resolveAllPowerMultiplier) {
+        return judgeApi.resolveAllPowerMultiplier(skillData, { toFiniteNumber });
+    }
     if (!skillData || typeof skillData !== "object") return 1;
 
     const directMultiplier = toFiniteNumber(
@@ -3021,6 +3049,10 @@ function resolveAllPowerMultiplier(skillData) {
 }
 
 function toDisplayNumber(value, multiplier = 1) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.toDisplayNumber) {
+        return judgeApi.toDisplayNumber(value, multiplier);
+    }
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue) || numberValue === 0) return "";
     const scaledValue = Math.ceil(numberValue * multiplier);
@@ -3029,6 +3061,10 @@ function toDisplayNumber(value, multiplier = 1) {
 }
 
 function toScaledNumber(value, multiplier = 1) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.toScaledNumber) {
+        return judgeApi.toScaledNumber(value, multiplier);
+    }
     const numberValue = Number(value);
     if (!Number.isFinite(numberValue) || numberValue === 0) return 0;
     const scaledValue = Math.ceil(numberValue * multiplier);
@@ -3036,6 +3072,10 @@ function toScaledNumber(value, multiplier = 1) {
 }
 
 function normalizeStatReferenceKey(statRef) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.normalizeStatReferenceKey) {
+        return judgeApi.normalizeStatReferenceKey(statRef);
+    }
     return String(statRef ?? "")
         .normalize("NFKC")
         .trim()
@@ -3046,7 +3086,45 @@ function normalizeStatReferenceKey(statRef) {
         .trim();
 }
 
+function parseSignedStatReference(statRef) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.parseSignedStatReference) {
+        return judgeApi.parseSignedStatReference(statRef);
+    }
+    const raw = String(statRef ?? "")
+        .normalize("NFKC")
+        .trim();
+    if (!raw) {
+        return { sign: 1, core: "" };
+    }
+
+    let sign = 1;
+    let core = raw;
+    if (/^[-−ー－]/.test(core)) {
+        sign = -1;
+        core = core.replace(/^[-−ー－]+\s*/, "");
+    } else if (/^[+\uFF0B]/.test(core)) {
+        core = core.replace(/^[+\uFF0B]+\s*/, "");
+    }
+
+    if (/[-−ー－]$/.test(core)) {
+        sign = -1;
+        core = core.replace(/\s*[-−ー－]+$/, "");
+    } else if (/[+\uFF0B]$/.test(core)) {
+        core = core.replace(/\s*[+\uFF0B]+$/, "");
+    }
+
+    return {
+        sign,
+        core: core.trim()
+    };
+}
+
 function normalizeFieldKeyForCompare(value) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.normalizeFieldKeyForCompare) {
+        return judgeApi.normalizeFieldKeyForCompare(value);
+    }
     return String(value ?? "")
         .normalize("NFKC")
         .trim()
@@ -3058,11 +3136,19 @@ function normalizeFieldKeyForCompare(value) {
 }
 
 function isLevelReferenceKey(statRef) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.isLevelReferenceKey) {
+        return judgeApi.isLevelReferenceKey(statRef);
+    }
     const key = normalizeFieldKeyForCompare(statRef);
     return key === "lv" || key === "level" || key === "レベル";
 }
 
 function getSkillFieldValueByAliases(skillData, aliases = []) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.getSkillFieldValueByAliases) {
+        return judgeApi.getSkillFieldValueByAliases(skillData, aliases);
+    }
     if (!skillData || typeof skillData !== "object") return "";
     if (!Array.isArray(aliases) || aliases.length === 0) return "";
 
@@ -3107,8 +3193,24 @@ function getAdditionalPowerValue(statSource, skillData) {
 }
 
 function getCharacterStatValueForSkillRef(statSource, statRef, skillData = null) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.getCharacterStatValueForSkillRef) {
+        const fallbackSources = [
+            window?.statusCharacter,
+            Array.isArray(window?.selectedCharacter) ? (window.selectedCharacter[0] || null) : window?.selectedCharacter,
+            window?.playerData,
+            playerData
+        ];
+        return judgeApi.getCharacterStatValueForSkillRef(statSource, statRef, skillData, {
+            toFiniteNumber,
+            fallbackSources
+        });
+    }
+
     const source = Array.isArray(statSource) ? (statSource[0] || {}) : (statSource || {});
-    const rawKey = String(statRef ?? "").trim();
+    const parsedRef = parseSignedStatReference(statRef);
+    const refSign = parsedRef.sign === -1 ? -1 : 1;
+    const rawKey = String(parsedRef.core ?? "").trim();
     if (!rawKey) return 0;
 
     const normalizedKey = normalizeStatReferenceKey(rawKey);
@@ -3167,7 +3269,7 @@ function getCharacterStatValueForSkillRef(statSource, statRef, skillData = null)
         }
     }
 
-    const totalValue = baseValue + bonusValue;
+    const totalValue = (baseValue + bonusValue) * refSign;
     if (isLevelReferenceKey(normalizedKey)) {
         return totalValue * 1;
     }
@@ -4119,6 +4221,10 @@ function isGunOrBowAttackOption(attackOption) {
 
 // ステータス参照元が配列/単体オブジェクトの両方に対応。
 function getStatValueFromSource(statSource, key) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.getStatValueFromSource) {
+        return judgeApi.getStatValueFromSource(statSource, key, { toFiniteNumber });
+    }
     if (Array.isArray(statSource)) {
         return toFiniteNumber(statSource?.[0]?.[key]);
     }
@@ -4127,6 +4233,10 @@ function getStatValueFromSource(statSource, key) {
 
 // 基本式: 元値 × (1 + 判定ステータス/100)
 function applyCharacterStatRate(baseValue, statValue) {
+    const judgeApi = getSkillPowerJudgeApi();
+    if (judgeApi?.applyCharacterStatRate) {
+        return judgeApi.applyCharacterStatRate(baseValue, statValue, { toFiniteNumber });
+    }
     return toFiniteNumber(baseValue) * (1 + toFiniteNumber(statValue) / 100);
 }
 
@@ -5583,7 +5693,7 @@ function displayMagics(setMagics) {
         "麻痺", "混乱", "恐怖", "盲目", "閃光", "暗黒", "幻覚", "睡眠", "石化",
         "スタン", "拘束", "呪い", "呪い/HP", "呪い/MP", "呪い/ST", "呪い/攻撃",
         "呪い/防御", "呪い/魔力", "呪い/魔防", "呪い/速度", "呪い/命中", "支配",
-        "即死", "時間", "出血", "疲労", "物理ガード", "魔法ガード", "ノックバック"
+        "即死", "時間", "出血", "疲労", "ノックバック"
     ];
     const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
@@ -6158,6 +6268,17 @@ function buildSkillSetModalRows() {
                         : "切断";
                 scaledPowerBreakdownPhysicalMap = { [fallbackPhysicalKey]: fallbackPower };
                 reconciledPowerBreakdownMap = { ...scaledPowerBreakdownPhysicalMap };
+            }
+        }
+        const isLevelAttackReference = isLevelReferenceKey(preview?.attackReference || "");
+        if (
+            totalBucket === "A"
+            && Object.keys(scaledPowerBreakdownPhysicalMap).length === 0
+            && isLevelAttackReference
+        ) {
+            const fallbackPower = Math.max(0, Math.round(toFiniteNumber(rowPowerValue)));
+            if (fallbackPower > 0) {
+                scaledPowerBreakdownPhysicalMap = { 威力: fallbackPower };
             }
         }
         if (totalBucket === "A") {
@@ -6936,8 +7057,8 @@ async function updateSelectedSkills() {
                 ? `<ruby class="skill-name-ruby">${displayName}<rt>${displayRuby}</rt></ruby>`
                 : `<span class="skill-name-plain">${displayName}</span>`;
             mainRow.innerHTML = `<td>${slot}</td><td class="skill-name">
-                <span class="skill-name-main">${displayNameHtml}</span>
                 <span class="skill-name-icons">${displayIcons}</span>
+                <span class="skill-name-main">${displayNameHtml}</span>
                 </td>`;
             mainRow.value = displayName;
             mainRow.addEventListener('click', () => {
@@ -7168,6 +7289,22 @@ function resolveAttributeIconName(attributeValue) {
     for (const token of tokens) {
         const mapped = ATTRIBUTE_ICON_BY_NAME[token];
         if (mapped) return mapped;
+        const cleanedToken = String(token)
+            .replace(/[0-9０-９.%％+\-－ー()（）\[\]【】]/g, "")
+            .trim();
+        if (!cleanedToken) continue;
+        const cleanedMapped = ATTRIBUTE_ICON_BY_NAME[cleanedToken];
+        if (cleanedMapped) return cleanedMapped;
+        return cleanedToken;
+    }
+
+    const rawText = String(attributeValue || "").trim();
+    if (!rawText) return "";
+    const cleanedText = rawText.replace(/[0-9０-９.%％+\-－ー()（）\[\]【】]/g, "");
+    for (const [alias, iconName] of Object.entries(ATTRIBUTE_ICON_BY_NAME)) {
+        if (cleanedText.includes(alias)) {
+            return iconName;
+        }
     }
     return "";
 }
@@ -7176,9 +7313,8 @@ function buildAttributeWatermarkHtml(attributeValue) {
     if (!SKILL_ATTRIBUTE_WATERMARK_ENABLED) return "";
     const iconName = resolveAttributeIconName(attributeValue);
     if (!iconName) return "";
-    if (!SKILL_ICON_AVAILABLE_NAMES.has(iconName)) return "";
     const src = `${SKILL_ICON_DIR}/${encodeURIComponent(iconName)}.webp`;
-    return `<span class="skill-attribute-watermark" aria-hidden="true"><img src="${src}" alt="" loading="lazy"></span>`;
+    return `<span class="skill-attribute-watermark" aria-hidden="true"><img src="${src}" alt="" loading="lazy" onerror="this.style.display='none'"></span>`;
 }
 
 function getMissingSkillIconAssetNames() {
@@ -7194,9 +7330,8 @@ window.getMissingSkillIconAssetNames = getMissingSkillIconAssetNames;
 function getSkillIcons(skillInput) {
     const iconName = resolveSkillIconName(skillInput);
     if (!iconName) return "";
-    if (!SKILL_ICON_AVAILABLE_NAMES.has(iconName)) return "";
     const src = `${SKILL_ICON_DIR}/${encodeURIComponent(iconName)}.webp`;
-    return `<img class="skill-row-icon-image" src="${src}" alt="${iconName}" loading="lazy">`;
+    return `<img class="skill-row-icon-image" src="${src}" alt="${iconName}" loading="lazy" onerror="this.style.display='none'">`;
 }
 
 // スキルを個別に削除
@@ -9162,10 +9297,12 @@ function getSkillsFromTable() {
 function populateAttackOptions(options) {
     const selectElement = document.getElementById("attack-method-select");
     if (!selectElement) return;
-    const savedValue = getSavedAttackOptionForCharacter();
-    // キャラ別保持を優先する。currentValue を優先すると他キャラの値が混ざる。
-    const preferredValue = normalizeBattleText(savedValue);
     const autoDefaultValue = getDefaultAttackOptionValue(options);
+    const savedValue = normalizeBattleText(getSavedAttackOptionForCharacter());
+    const characterKey = normalizeBattleText(getCharacterScopedKey());
+    const previousValue = normalizeBattleText(selectElement.value);
+    const previousOwnerKey = normalizeBattleText(selectElement?.dataset?.attackMethodOwner || "");
+    const previousWasUserSelected = String(selectElement?.dataset?.attackMethodUserSelected || "") === "1";
 
     // 初期化して既存のオプションを削除
     selectElement.innerHTML = "";
@@ -9195,22 +9332,26 @@ function populateAttackOptions(options) {
         selectElement.appendChild(optionElement);
     });
 
-    let nextValue = "";
-    if (preferredValue) {
-        const hasPreferredOption = options.some((option) => (
-            normalizeBattleText(option?.value) === preferredValue
-        ));
-        // キャラ別保存値を最優先。データ値が0でも選択状態は維持する。
-        nextValue = hasPreferredOption ? preferredValue : autoDefaultValue;
-    } else {
-        // 初回のみ「武器優先 / なければ素手or爪高い方」の自動選択を使う。
-        nextValue = autoDefaultValue;
-    }
+    const hasPreviousOption = previousValue
+        && options.some((option) => normalizeBattleText(option?.value) === previousValue);
+    const hasSavedOption = savedValue
+        && options.some((option) => normalizeBattleText(option?.value) === savedValue);
+    const keepPreviousSelection = previousWasUserSelected
+        && hasPreviousOption
+        && previousOwnerKey === characterKey;
+    // 1) キャラ別の保存値が有効なら復元
+    // 2) 同一キャラ画面内の手動選択を維持
+    // 3) それ以外は装備状態から初期決定
+    const nextValue = hasSavedOption
+        ? savedValue
+        : (keepPreviousSelection ? previousValue : autoDefaultValue);
 
     const existsInOptions = nextValue
         && options.some((option) => normalizeBattleText(option?.value) === nextValue);
     selectElement.value = existsInOptions ? nextValue : "";
-    saveCurrentAttackOptionForCharacter(selectElement.value);
+    selectElement.dataset.attackMethodOwner = characterKey;
+    const shouldMarkSelected = existsInOptions && (hasSavedOption || keepPreviousSelection);
+    selectElement.dataset.attackMethodUserSelected = shouldMarkSelected ? "1" : "0";
     updateAttackMethodTriggerLabel(selectElement.value);
 }
 
@@ -9232,6 +9373,9 @@ async function handleAttackMethodChange(nextValue = null) {
     }
 
     const selectedMethod = normalizeBattleText(selectElement.value);
+    const characterKey = normalizeBattleText(getCharacterScopedKey());
+    selectElement.dataset.attackMethodOwner = characterKey;
+    selectElement.dataset.attackMethodUserSelected = selectedMethod ? "1" : "0";
     saveCurrentAttackOptionForCharacter(selectedMethod);
     updateAttackMethodTriggerLabel(selectedMethod);
     if (selectedMethod) {

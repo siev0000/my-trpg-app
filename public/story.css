@@ -9,6 +9,41 @@
     box-sizing: border-box; 
 }
 
+:root {
+    --app-scrollbar-size: 10px;
+    --app-scrollbar-track: #eaf1fa;
+    --app-scrollbar-thumb-start: #b3c8e2;
+    --app-scrollbar-thumb: #90aace;
+    --app-scrollbar-thumb-hover-start: #9fb9d8;
+    --app-scrollbar-thumb-hover: #7e99bf;
+    --app-scrollbar-thumb-border: #eaf1fa;
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+    width: var(--app-scrollbar-size);
+    height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+    background: var(--app-scrollbar-track);
+    border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-start) 0%, var(--app-scrollbar-thumb) 100%);
+    border-radius: 999px;
+    border: 2px solid var(--app-scrollbar-thumb-border);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--app-scrollbar-thumb-hover-start) 0%, var(--app-scrollbar-thumb-hover) 100%);
+}
+
 html, body {
     height: 100%;
     font-family: Arial, sans-serif;

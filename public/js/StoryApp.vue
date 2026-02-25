@@ -206,7 +206,8 @@ export default {
         async loadAllSections() {
             try {
                 await this.loadSection('bottom', '/sections/skill-container.html', [
-                    '/js/skillValueFormula.js',
+                    '/js/skill-power/skillValueFormula.js',
+                    '/js/skill-power/powerJudge.js',
                     '/js/skillContainer.js'
                 ]);
                 window.DebaglogSet?.('bottom section loaded successfully');

@@ -333,7 +333,15 @@
         >
             <div class="preset-rename-modal-content" @click.stop>
                 <div class="preset-rename-modal-header">
-                    <h4>セット名変更</h4>
+                    <div class="preset-modal-title-wrap">
+                        <h4>セット名変更</h4>
+                        <img
+                            v-if="renamePresetSelectedIconUrl"
+                            :src="renamePresetSelectedIconUrl"
+                            :alt="renamePresetIconName || '選択中アイコン'"
+                            class="preset-modal-title-icon"
+                        >
+                    </div>
                     <button type="button" class="preset-rename-close" aria-label="閉じる" @click="closeRenamePresetModal">×</button>
                 </div>
                 <div class="preset-rename-modal-body">
@@ -405,7 +413,15 @@
         >
             <div class="preset-save-modal-content" @click.stop>
                 <div class="preset-save-modal-header">
-                    <h4>セット登録</h4>
+                    <div class="preset-modal-title-wrap">
+                        <h4>セット登録</h4>
+                        <img
+                            v-if="savePresetSelectedIconUrl"
+                            :src="savePresetSelectedIconUrl"
+                            :alt="savePresetIconName || '選択中アイコン'"
+                            class="preset-modal-title-icon"
+                        >
+                    </div>
                     <button type="button" class="preset-save-close" aria-label="閉じる" @click="closeSavePresetModal">×</button>
                 </div>
                 <div class="preset-save-modal-body">
@@ -572,6 +588,20 @@ const currentAttackMethodLabel = computed(() => {
     if (!current) return '未選択';
     const matched = attackMethods.value.find((option) => normalizeText(option.value) === current);
     return String(matched?.label || currentAttackMethod.value || '未選択').trim() || '未選択';
+});
+
+const savePresetSelectedIconUrl = computed(() => {
+    const selectedName = normalizeText(savePresetIconName.value);
+    if (!selectedName) return '';
+    const matched = savePresetIconEntries.value.find((icon) => normalizeText(icon?.name) === selectedName);
+    return normalizeText(matched?.url) || toIconUrlFromName(selectedName);
+});
+
+const renamePresetSelectedIconUrl = computed(() => {
+    const selectedName = normalizeText(renamePresetIconName.value);
+    if (!selectedName) return '';
+    const matched = savePresetIconEntries.value.find((icon) => normalizeText(icon?.name) === selectedName);
+    return normalizeText(matched?.url) || toIconUrlFromName(selectedName);
 });
 
 function normalizeText(value) {
@@ -1620,12 +1650,12 @@ onBeforeUnmount(() => {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 28px;
+    height: 45px;
     border: 1px solid #b9c9dc;
     border-radius: 999px;
     background: #ffffff;
     color: #2c4863;
-    font-size: 12px;
+    font-size: 17px;
     font-weight: 700;
     padding: 0 10px;
     cursor: pointer;
@@ -1633,8 +1663,8 @@ onBeforeUnmount(() => {
 }
 
 .skill-set-header-preset-icon {
-    width: 35px;
-    height: 30px;
+    width: 45px;
+    height: 45px;
     object-fit: contain;
     flex: 0 0 auto;
 }
@@ -2358,6 +2388,8 @@ onBeforeUnmount(() => {
 
 .preset-save-modal-content {
     width: min(94%, 620px);
+    --preset-modal-title-icon-size: 55px;
+    --preset-modal-title-icon-offset-x: 8px;
     display: flex;
     flex-direction: column;
     border: 1px solid #bfcfe0;
@@ -2375,10 +2407,29 @@ onBeforeUnmount(() => {
     padding: 10px 12px;
 }
 
+.preset-modal-title-wrap {
+    position: relative;
+    display: inline-block;
+    min-width: 0;
+    overflow: visible;
+}
+
 .preset-save-modal-header h4 {
     margin: 0;
     font-size: 18px;
     color: #1f3e5b;
+}
+
+.preset-modal-title-icon {
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    width: var(--preset-modal-title-icon-size);
+    height: var(--preset-modal-title-icon-size);
+    transform: translate(var(--preset-modal-title-icon-offset-x), -50%);
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
 }
 
 .preset-save-close {
@@ -2423,20 +2474,20 @@ onBeforeUnmount(() => {
 }
 
 .preset-save-icon-grid {
-    max-height: 230px;
+    max-height: 360px;
     overflow: auto;
     border: 1px solid #d7e2ef;
     border-radius: 8px;
     background: #ffffff;
     padding: 8px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
     gap: 6px;
 }
 
 .preset-save-icon-btn {
     width: 100%;
-    min-height: 44px;
+    min-height: 65px;
     border: 1px solid #c1d0e1;
     border-radius: 8px;
     background: #ffffff;
@@ -2461,8 +2512,8 @@ onBeforeUnmount(() => {
 }
 
 .preset-save-icon-image {
-    width: 26px;
-    height: 26px;
+    width: 60px;
+    height: 60px;
     object-fit: contain;
 }
 
@@ -2529,7 +2580,9 @@ onBeforeUnmount(() => {
 }
 
 .preset-rename-modal-content {
-    width: min(92%, 460px);
+    width: min(94%, 620px);
+    --preset-modal-title-icon-size: 55px;
+    --preset-modal-title-icon-offset-x: 8px;
     display: flex;
     flex-direction: column;
     border: 1px solid #bfcfe0;
