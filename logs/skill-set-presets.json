@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-02-25T16:49:55.643Z",
+  "updatedAt": "2026-03-22T14:17:27.378Z",
   "presets": {
     "ドゥンケルハイト": {
       "爪コンボ": {
@@ -127,9 +127,24 @@
           "fullPowerOn": true
         }
       },
-      "天丼波盛り": {
-        "updatedAt": "2026-02-25T13:58:56.071Z",
-        "icon": "光.webp",
+      "倶利伽羅剣コンボ": {
+        "updatedAt": "2026-03-22T13:00:41.068Z",
+        "icon": "宇宙.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "切断",
+            "S": "破壊力",
+            "Q1": "",
+            "Q2": "",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": true
+        }
+      },
+      "死は救済なりアーメン": {
+        "updatedAt": "2026-03-22T13:30:16.794Z",
+        "icon": "信仰.webp",
         "payload": {
           "selectedSkills": {
             "A": "切断",
@@ -140,6 +155,21 @@
           },
           "attackMethod": "武器",
           "fullPowerOn": true
+        }
+      },
+      "開戦の合図": {
+        "updatedAt": "2026-03-22T13:50:47.346Z",
+        "icon": "牙.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "王の宣言",
+            "S": "",
+            "Q1": "威圧の声",
+            "Q2": "万能な技能",
+            "M": ""
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": false
         }
       }
     },
@@ -280,6 +310,38 @@
             "M": ""
           },
           "attackMethod": "爪",
+          "fullPowerOn": false
+        }
+      }
+    },
+    "ディスフィロア・ドゥレム・ディラ": {
+      "メテオスウォーム12連発": {
+        "updatedAt": "2026-03-22T13:56:54.712Z",
+        "icon": "星.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "",
+            "S": "破壊の流星",
+            "Q1": "魔法限界突破",
+            "Q2": "魔法三重化",
+            "M": "流星雨"
+          },
+          "attackMethod": "武器",
+          "fullPowerOn": false
+        }
+      },
+      "星々の魔眼": {
+        "updatedAt": "2026-03-22T14:17:27.378Z",
+        "icon": "眼.webp",
+        "payload": {
+          "selectedSkills": {
+            "A": "",
+            "S": "魔眼",
+            "Q1": "運命予測",
+            "Q2": "未来予測",
+            "M": "王冠の星星"
+          },
+          "attackMethod": "武器",
           "fullPowerOn": false
         }
       }

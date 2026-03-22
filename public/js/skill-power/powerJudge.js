@@ -145,24 +145,55 @@
         ));
         const isLevelReference = isLevelReferenceKey(rawKey) || isLevelReferenceKey(normalizedKey);
         const levelAliasKeys = ["Lv", "LV", "レベル", "level", "Level", "allLv", "allLevel"];
+        const collectStatSearchTargets = (targetSource) => {
+            const root = (targetSource && typeof targetSource === "object") ? targetSource : {};
+            const targets = [];
+            const seen = new Set();
+            const pushTarget = (candidate) => {
+                if (!candidate || typeof candidate !== "object") return;
+                if (seen.has(candidate)) return;
+                seen.add(candidate);
+                targets.push(candidate);
+            };
+
+            pushTarget(root);
+            pushTarget(root?.bodyAttributes);
+            pushTarget(root?.stats);
+            pushTarget(root?.stats?.allStats);
+            pushTarget(root?.stats?.baseStats);
+            pushTarget(root?.stats?.levelStats);
+            pushTarget(root?.stats?.bodyAttributes);
+            pushTarget(root?.itemBonuses?.stats);
+            pushTarget(root?.itemBonuses?.bodyAttributes);
+            pushTarget(root?.skillBonuses);
+            pushTarget(root?.skillBonuses?.stats);
+            pushTarget(root?.status);
+            pushTarget(root?.profile);
+            pushTarget(root?.character);
+            return targets;
+        };
 
         const findValueByCandidateKeys = (targetSource) => {
-            const target = (targetSource && typeof targetSource === "object") ? targetSource : {};
-            for (const key of candidateKeys) {
-                const value = toFiniteNumber(target?.[key]);
-                if (value !== 0 || Object.prototype.hasOwnProperty.call(target, key)) {
-                    return { found: true, value };
+            const targets = collectStatSearchTargets(targetSource);
+            for (const target of targets) {
+                for (const key of candidateKeys) {
+                    const value = toFiniteNumber(target?.[key]);
+                    if (value !== 0 || Object.prototype.hasOwnProperty.call(target, key)) {
+                        return { found: true, value };
+                    }
                 }
             }
-            const sourceEntries = Object.entries(target || {});
-            for (const key of candidateKeys) {
-                const normalizedCandidate = normalizeFieldKeyForCompare(key);
-                if (!normalizedCandidate) continue;
-                const matched = sourceEntries.find(([sourceKey]) => (
-                    normalizeFieldKeyForCompare(sourceKey) === normalizedCandidate
-                ));
-                if (!matched) continue;
-                return { found: true, value: toFiniteNumber(matched[1]) };
+            for (const target of targets) {
+                const sourceEntries = Object.entries(target || {});
+                for (const key of candidateKeys) {
+                    const normalizedCandidate = normalizeFieldKeyForCompare(key);
+                    if (!normalizedCandidate) continue;
+                    const matched = sourceEntries.find(([sourceKey]) => (
+                        normalizeFieldKeyForCompare(sourceKey) === normalizedCandidate
+                    ));
+                    if (!matched) continue;
+                    return { found: true, value: toFiniteNumber(matched[1]) };
+                }
             }
             return { found: false, value: 0 };
         };

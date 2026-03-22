@@ -220,3 +220,97 @@ requestId	log-mlzcpxwm-bhx2jz
 
 10
 
+timestamp	2026-03-22T13:08:23.206Z
+requestId	log-mn1rvspy-xttic9
+キリョク=ラセツ
+武器
+1
+切断
+破壊力
+円
+
+14
+
+timestamp	2026-03-22T15:23:21.918Z
+requestId	log-mn1wpdq6-nfwukz
+キリョク=ラセツ
+武器
+1
+
+5
+
+timestamp	2026-03-22T15:24:24.361Z
+requestId	log-mn1wqpwp-sy7lsm
+キリョク=ラセツ
+武器
+1
+
+18
+
+timestamp	2026-03-22T15:24:56.270Z
+requestId	log-mn1wrej2-4tkbre
+ヘラクレス・トゥクストラ・エンシス
+素手
+0
+切断
+吹き飛ばす
+
+31
+
+timestamp	2026-03-22T15:26:07.098Z
+requestId	log-mn1wsx6i-vnil2o
+ヘラクレス・トゥクストラ・エンシス
+角
+0
+打撃
+
+85	28	84	1
+
+timestamp	2026-03-22T15:27:08.216Z
+requestId	log-mn1wu8c8-pks7ak
+キリョク=ラセツ
+武器
+0
+切断
+
+69
+
+timestamp	2026-03-22T15:27:33.858Z
+requestId	log-mn1wus4i-2y8i42
+キリョク=ラセツ
+武器
+1
+
+2
+
+timestamp	2026-03-22T15:28:16.743Z
+requestId	log-mn1wvp7r-dd95gm
+ディスフィロア・ドゥレム・ディラ
+武器
+0
+勝利の星廻り
+魔眼
+
+51
+
+timestamp	2026-03-22T15:34:02.429Z
+requestId	log-mn1x33y5-k5x21r
+キリョク=ラセツ
+武器
+1
+切断
+外皮強化
+
+55
+
+timestamp	2026-03-22T15:40:28.293Z
+requestId	log-mn1xbdol-uh3ko1
+ディスフィロア・ドゥレム・ディラ
+武器
+0
+重力落下:強化
+魔法範囲拡大化
+重力落下
+
+7
+

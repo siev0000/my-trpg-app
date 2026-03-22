@@ -3,7 +3,7 @@
     "version": "1.0.0",
     "main": "server.js",
     "scripts": {
-        "prestart": "npm run check:mojibake",
+        "prestart": "npm run check:mojibake && npm run build",
         "start": "node server.js",
         "predev:api": "npm run check:mojibake",
         "dev:api": "cross-env PORT=3001 node server.js",

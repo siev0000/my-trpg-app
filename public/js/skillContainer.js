@@ -99,7 +99,7 @@ let displayMagicsList = [];
 let selectName = "";
 
 // デバッグログ制御
-let DEBAG_LOG_ENABLED = false;
+let DEBAG_LOG_ENABLED = true;
 
 function DebaglogSet(...args) {
     if (!DEBAG_LOG_ENABLED) return;
@@ -1259,6 +1259,10 @@ async function characterDataDisplay (characterDataPush){
 
 // キャラクターデータ習得のメイン関数
 async function acquireCharacterData(character) {
+    const splitCsvList = (value) => String(value ?? "")
+        .split(",")
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean);
     const returnCharacterData = JSON.parse(JSON.stringify(characterData));
     returnCharacterData.name = character.名前
     // equipmentSlots を使って statusCharacter から装備品を取得し、equipmentData に格納
@@ -1277,7 +1281,7 @@ async function acquireCharacterData(character) {
     DebaglogSet(" skillsBySlot :", skillsBySlot);
 
     //キャラデータ習得
-    returnCharacterData.initialClasses = character[`取得1`].slice(4);
+    returnCharacterData.initialClasses = String(character?.[`取得1`] ?? "").slice(4);
     returnCharacterData.acquiredClasses = await addAcquiredClasses(character)
 
     // DebaglogSet(returnCharacterData.acquiredClasses)
@@ -1303,16 +1307,16 @@ async function acquireCharacterData(character) {
     DebaglogSet("magicEnhanceCount :", magicEnhanceCount)
     // DebaglogSet("statusCharacter.取得魔法 :", character.取得魔法.split(','))
 
-    returnCharacterData.magic = await fetchMagics(character.取得魔法.split(',') ,magicEnhanceCount)
+    returnCharacterData.magic = await fetchMagics(splitCsvList(character?.取得魔法), magicEnhanceCount)
 
 
 
 
 
     //  character.持ち物 ? character.持ち物.split(' ') : [];
-    returnCharacterData.inventory = await fetchItem(character.持ち物 ? character.持ち物.split(',') : [])
+    returnCharacterData.inventory = await fetchItem(splitCsvList(character?.持ち物))
     returnCharacterData.maxInventory = parseInt(character.手持ち上限)
-    returnCharacterData.storage = await fetchItem(character.倉庫 ? character.倉庫.split(',') : [])
+    returnCharacterData.storage = await fetchItem(splitCsvList(character?.倉庫))
     returnCharacterData.money = parseInt(character.所持金)
 
     returnCharacterData.teleportLocations = character.転移地点
@@ -3207,6 +3211,8 @@ function getCharacterStatValueForSkillRef(statSource, statRef, skillData = null)
         });
     }
 
+    console.log("getCharacterStatValueForSkillRef called with:", { statSource, statRef, skillData });
+
     const source = Array.isArray(statSource) ? (statSource[0] || {}) : (statSource || {});
     const parsedRef = parseSignedStatReference(statRef);
     const refSign = parsedRef.sign === -1 ? -1 : 1;
@@ -3215,24 +3221,55 @@ function getCharacterStatValueForSkillRef(statSource, statRef, skillData = null)
 
     const normalizedKey = normalizeStatReferenceKey(rawKey);
     const candidateKeys = [rawKey, normalizedKey].filter((key, index, list) => key && list.indexOf(key) === index);
+    const collectStatSearchTargets = (targetSource) => {
+        const root = (targetSource && typeof targetSource === "object") ? targetSource : {};
+        const targets = [];
+        const seen = new Set();
+        const pushTarget = (candidate) => {
+            if (!candidate || typeof candidate !== "object") return;
+            if (seen.has(candidate)) return;
+            seen.add(candidate);
+            targets.push(candidate);
+        };
+
+        pushTarget(root);
+        pushTarget(root?.bodyAttributes);
+        pushTarget(root?.stats);
+        pushTarget(root?.stats?.allStats);
+        pushTarget(root?.stats?.baseStats);
+        pushTarget(root?.stats?.levelStats);
+        pushTarget(root?.stats?.bodyAttributes);
+        pushTarget(root?.itemBonuses?.stats);
+        pushTarget(root?.itemBonuses?.bodyAttributes);
+        pushTarget(root?.skillBonuses);
+        pushTarget(root?.skillBonuses?.stats);
+        pushTarget(root?.status);
+        pushTarget(root?.profile);
+        pushTarget(root?.character);
+        return targets;
+    };
 
     const findValueByCandidateKeys = (targetSource) => {
-        const target = (targetSource && typeof targetSource === "object") ? targetSource : {};
-        for (const key of candidateKeys) {
-            const value = toFiniteNumber(target?.[key]);
-            if (value !== 0 || Object.prototype.hasOwnProperty.call(target, key)) {
-                return { found: true, value };
+        const targets = collectStatSearchTargets(targetSource);
+        for (const target of targets) {
+            for (const key of candidateKeys) {
+                const value = toFiniteNumber(target?.[key]);
+                if (value !== 0 || Object.prototype.hasOwnProperty.call(target, key)) {
+                    return { found: true, value };
+                }
             }
         }
-        const sourceEntries = Object.entries(target || {});
-        for (const key of candidateKeys) {
-            const normalizedCandidate = normalizeFieldKeyForCompare(key);
-            if (!normalizedCandidate) continue;
-            const matched = sourceEntries.find(([sourceKey]) => (
-                normalizeFieldKeyForCompare(sourceKey) === normalizedCandidate
-            ));
-            if (!matched) continue;
-            return { found: true, value: toFiniteNumber(matched[1]) };
+        for (const target of targets) {
+            const sourceEntries = Object.entries(target || {});
+            for (const key of candidateKeys) {
+                const normalizedCandidate = normalizeFieldKeyForCompare(key);
+                if (!normalizedCandidate) continue;
+                const matched = sourceEntries.find(([sourceKey]) => (
+                    normalizeFieldKeyForCompare(sourceKey) === normalizedCandidate
+                ));
+                if (!matched) continue;
+                return { found: true, value: toFiniteNumber(matched[1]) };
+            }
         }
         return { found: false, value: 0 };
     };
@@ -3302,10 +3339,8 @@ const DISPLAY_STATE_KEYS_MAGICS = [
     "即死", "時間", "出血", "疲労", "ノックバック"
 ];
 const DISPLAY_DEFENSE_SPECIAL_KEYS = ["物理ガード", "魔法ガード"];
-const SKILL_SET_MODAL_POWER_BREAKDOWN_KEYS = Array.from(new Set([
-    ...DISPLAY_POWER_KEYS_SKILLS,
-    ...DISPLAY_POWER_KEYS_MAGICS
-]));
+// skill-set-modal-content では属性キーを威力に含めない。
+const SKILL_SET_MODAL_POWER_BREAKDOWN_KEYS = ["威力", "切断", "貫通", "打撃"];
 const SKILL_SET_MODAL_GUARD_BREAKDOWN_KEYS = ["守り", "防御", "防御性能", "防御倍率", ...DISPLAY_DEFENSE_SPECIAL_KEYS];
 const SKILL_SET_MODAL_ATTRIBUTE_BREAKDOWN_KEYS = [...ATTACK_OPTION_ATTRIBUTE_KEYS, "属性"];
 const SKILL_SET_MODAL_STATE_BREAKDOWN_KEYS = Array.from(new Set([
@@ -3820,6 +3855,56 @@ function calculateBattleSkillDisplayData(slot, skillInput, options = {}) {
         powerValue,
         guardValue,
         stateValue
+    };
+}
+
+function resolveUnifiedGuardValue({
+    slot = "",
+    preview = null,
+    sourceSkill = null,
+    fallbackSkillData = null,
+    slotDivisor = 1
+} = {}) {
+    const normalizedSlot = String(slot || "").toUpperCase();
+    const divisor = Math.max(1, Math.round(toFiniteNumber(slotDivisor) || 1));
+    const rawGuard = toFiniteNumber(preview?.guardValue);
+    const displayGuardValue = divisor > 1 ? Math.round(rawGuard / divisor) : rawGuard;
+    const hasOverrideBreakdown = Boolean(
+        preview?.overrideMetricBreakdown
+        && typeof preview.overrideMetricBreakdown === "object"
+    );
+    const guardSourceSkill = preview?.adjustedSkillData || sourceSkill || fallbackSkillData || {};
+    const physicalGuardBase = toFiniteNumber(guardSourceSkill?.物理ガード);
+    const magicGuardRaw = toFiniteNumber(guardSourceSkill?.魔法ガード);
+    const hasGuardByType = physicalGuardBase > 0 || magicGuardRaw > 0;
+    const isSQSlot = normalizedSlot === "S" || normalizedSlot === "Q1" || normalizedSlot === "Q2";
+    const attackMethodGuardValue = toFiniteNumber(getAttackOptionValueByAliases(
+        getSelectedAttackOptionData(),
+        ["防御性能", "防御倍率", "防御性能倍率", "守り", "防御", "guard"],
+        0
+    ));
+    const magicGuardApplied = (isSQSlot && magicGuardRaw >= 1) ? magicGuardRaw : 0;
+
+    let rowGuardValue = toFiniteNumber(displayGuardValue);
+    if (!hasOverrideBreakdown && hasGuardByType) {
+        const physicalGuardWithMethod = physicalGuardBase + attackMethodGuardValue;
+        const magicGuardWithMethod = magicGuardApplied + attackMethodGuardValue;
+        const guardBaseByRule = Math.max(physicalGuardWithMethod, magicGuardWithMethod);
+        const guardMultiplier = Math.max(0, toFiniteNumber(preview?.effectiveMultiplier) || 1);
+        const rawGuardByRule = toScaledNumber(guardBaseByRule, guardMultiplier);
+        rowGuardValue = divisor > 1 ? Math.round(rawGuardByRule / divisor) : rawGuardByRule;
+    }
+
+    return {
+        rowGuardValue,
+        displayGuardValue,
+        hasOverrideBreakdown,
+        guardSourceSkill,
+        hasGuardByType,
+        physicalGuardBase,
+        magicGuardRaw,
+        magicGuardApplied,
+        attackMethodGuardValue
     };
 }
 
@@ -5566,6 +5651,7 @@ function displaySkills(setSkill) {
         const attackValue = getAttackStatValue(statusSourceWithConditionalBonuses, sourceSkill);
         const additionalPowerValue = getAdditionalPowerValue(statusSourceWithConditionalBonuses, sourceSkill);
         const uper = (1 + attackValue / 100) * (1 + additionalPowerValue / 500);
+        // console.log("allStats:",playerData.stats)
         DebaglogSet(" skill S : ", getAttackStatReference(sourceSkill), getAdditionalPowerReference(sourceSkill), uper)
         const totalPower = calculatePowerTotal(powerKeys, sourceSkill, powerKeyScales);
         const totalDefense = calculateTotal(["防御性能"], sourceSkill, ["物理ガード", "魔法ガード"]);
@@ -6072,34 +6158,24 @@ function buildSkillSetModalRows() {
         const slotDivisor = (shouldSplitByAttackCount && isSplitTargetSlot) ? splitCount : 1;
 
         const rawPower = toFiniteNumber(preview?.powerValue);
-        const rawGuard = toFiniteNumber(preview?.guardValue);
         const rawState = toFiniteNumber(preview?.stateValue);
         const displayPowerValue = slotDivisor > 1 ? Math.round(rawPower / slotDivisor) : rawPower;
-        const displayGuardValue = slotDivisor > 1 ? Math.round(rawGuard / slotDivisor) : rawGuard;
         const displayStateValue = slotDivisor > 1 ? Math.round(rawState / slotDivisor) : rawState;
-        const hasOverrideBreakdown = totalBucket === "A"
-            && preview?.overrideMetricBreakdown
-            && typeof preview.overrideMetricBreakdown === "object";
-        const guardSourceSkill = preview?.adjustedSkillData || sourceSkill;
-        const physicalGuardBase = toFiniteNumber(guardSourceSkill?.物理ガード);
-        const magicGuardRaw = toFiniteNumber(guardSourceSkill?.魔法ガード);
-        const hasGuardByType = physicalGuardBase > 0 || magicGuardRaw > 0;
-        const isSQSlot = slot === "S" || slot === "Q1" || slot === "Q2";
-        const attackMethodGuardValue = toFiniteNumber(getAttackOptionValueByAliases(
-            getSelectedAttackOptionData(),
-            ["防御性能", "防御倍率", "防御性能倍率", "守り", "防御", "guard"],
-            0
-        ));
-        let rowGuardValue = toFiniteNumber(displayGuardValue);
-        if (!hasOverrideBreakdown && hasGuardByType) {
-            const magicGuardBase = (isSQSlot && magicGuardRaw >= 1) ? magicGuardRaw : 0;
-            const physicalGuardWithMethod = physicalGuardBase + attackMethodGuardValue;
-            const magicGuardWithMethod = magicGuardBase + attackMethodGuardValue;
-            const guardBaseByRule = Math.max(physicalGuardWithMethod, magicGuardWithMethod);
-            const guardMultiplier = Math.max(0, toFiniteNumber(preview?.effectiveMultiplier) || 1);
-            const rawGuardByRule = toScaledNumber(guardBaseByRule, guardMultiplier);
-            rowGuardValue = slotDivisor > 1 ? Math.round(rawGuardByRule / slotDivisor) : rawGuardByRule;
-        }
+        const guardResolved = resolveUnifiedGuardValue({
+            slot,
+            preview,
+            sourceSkill,
+            fallbackSkillData: skillData,
+            slotDivisor
+        });
+        const hasOverrideBreakdown = guardResolved.hasOverrideBreakdown;
+        const guardSourceSkill = guardResolved.guardSourceSkill;
+        const physicalGuardBase = guardResolved.physicalGuardBase;
+        const magicGuardRaw = guardResolved.magicGuardRaw;
+        const hasGuardByType = guardResolved.hasGuardByType;
+        const attackMethodGuardValue = guardResolved.attackMethodGuardValue;
+        const rowGuardValue = toFiniteNumber(guardResolved.rowGuardValue);
+        const displayGuardValue = toFiniteNumber(guardResolved.displayGuardValue);
 
         const slotAttackCountInfo = getSkillAttackCountInfo(sourceSkill);
         if (totalBucket === "A" && isSplitTargetSlot && slotAttackCountInfo.baseCount <= 1 && slotAttackCountInfo.addedCount > 0) {
@@ -6128,7 +6204,7 @@ function buildSkillSetModalRows() {
             });
             return total;
         };
-        const rowPowerValue = toFiniteNumber(displayPowerValue);
+        let rowPowerValue = toFiniteNumber(displayPowerValue);
         const rowAttributeValue = toFiniteNumber(preview?.displayAttribute);
         let groupedPowerValue = rowPowerValue;
         let groupedAttributeValue = rowAttributeValue;
@@ -6214,10 +6290,17 @@ function buildSkillSetModalRows() {
             divisor: slotDivisor,
             resolveRate: hasOverrideBreakdown ? resolveGlobalRate : null
         });
+        const scaledPowerBreakdownTotal = Object.values(scaledPowerBreakdownMap).reduce(
+            (sum, value) => sum + toFiniteNumber(value),
+            0
+        );
+        const expectedPowerValue = Math.max(0, Math.round(scaledPowerBreakdownTotal));
+        rowPowerValue = expectedPowerValue;
+        groupedPowerValue = rowPowerValue;
         let reconciledPowerBreakdownMap = reconcileBreakdownMapToExpected(
             scaledPowerBreakdownMap,
-            rowPowerValue,
-            "威力"
+            expectedPowerValue,
+            expectedPowerValue > 0 ? "威力" : ""
         );
         const reconciledGuardBreakdownMap = reconcileBreakdownMapToExpected(
             scaledGuardBreakdownMap,
@@ -6352,7 +6435,7 @@ function buildSkillSetModalRows() {
                 guardByType: {
                     physical: physicalGuardBase,
                     magicRaw: magicGuardRaw,
-                    magicApplied: (isSQSlot && magicGuardRaw >= 1) ? magicGuardRaw : 0,
+                    magicApplied: guardResolved.magicGuardApplied,
                     attackMethod: attackMethodGuardValue
                 },
                 powerBeforeMultiplier: preview?.powerBeforeMultiplier,
@@ -6934,8 +7017,10 @@ async function updateSelectedSkills() {
         const skill = selectedSkills?.[slot];
         const {
             calcSkillData,
+            adjustedSkillData,
             matchedPassives,
             appliedPassives,
+            overrideMetricBreakdown,
             attackReference,
             additionalPowerReference,
             attackValue,
@@ -7014,10 +7099,21 @@ async function updateSelectedSkills() {
                 calcLog.全力倍率 = fullPowerMultiplier;
             }
             const slotPowerValue = toFiniteNumber(powerValue);
-            const slotGuardValue = toFiniteNumber(guardValue);
             const slotStateValue = toFiniteNumber(stateValue);
+            const guardResolved = resolveUnifiedGuardValue({
+                slot,
+                preview: {
+                    guardValue,
+                    effectiveMultiplier,
+                    adjustedSkillData,
+                    overrideMetricBreakdown
+                },
+                sourceSkill: slotSkillSource,
+                fallbackSkillData: getSkillData(skill),
+                slotDivisor
+            });
             const addedPower = slotDivisor > 1 ? Math.round(slotPowerValue / slotDivisor) : slotPowerValue;
-            const addedDefense = slotDivisor > 1 ? Math.round(slotGuardValue / slotDivisor) : slotGuardValue;
+            const addedDefense = toFiniteNumber(guardResolved.rowGuardValue);
             const addedState = slotDivisor > 1 ? Math.round(slotStateValue / slotDivisor) : slotStateValue;
             const totalBucket = resolveSkillTotalBucket(slot, slotSkillSource || calcSkillData, getSkillData(skill));
             if (totalBucket === "A" && isSplitTargetSlot && slotAttackCountInfo.baseCount <= 1 && slotAttackCountInfo.addedCount > 0) {
@@ -7033,6 +7129,15 @@ async function updateSelectedSkills() {
             };
             calcLog.合計区分 = totalBucket;
             calcLog.合計加算値 = { 威力: addedPower, 守り: addedDefense, 状態: addedState };
+            calcLog.守り計算 = {
+                displayGuard: guardResolved.displayGuardValue,
+                physicalGuard: guardResolved.physicalGuardBase,
+                magicGuardRaw: guardResolved.magicGuardRaw,
+                magicGuardApplied: guardResolved.magicGuardApplied,
+                attackMethodGuard: guardResolved.attackMethodGuardValue,
+                hasGuardByType: guardResolved.hasGuardByType,
+                hasOverrideBreakdown: guardResolved.hasOverrideBreakdown
+            };
             DebaglogSet("[スキル計算詳細/合計反映]", calcLog);
 
             totalPower += addedPower;
@@ -7171,6 +7276,7 @@ const SKILL_ICON_RULES = [
 ];
 
 const ATTRIBUTE_ICON_BY_NAME = {
+    通常攻撃: "武器",
     炎: "炎",
     火: "炎",
     氷: "氷",
@@ -7295,7 +7401,9 @@ function resolveAttributeIconName(attributeValue) {
         if (!cleanedToken) continue;
         const cleanedMapped = ATTRIBUTE_ICON_BY_NAME[cleanedToken];
         if (cleanedMapped) return cleanedMapped;
-        return cleanedToken;
+        if (SKILL_ICON_AVAILABLE_NAMES.has(cleanedToken)) {
+            return cleanedToken;
+        }
     }
 
     const rawText = String(attributeValue || "").trim();

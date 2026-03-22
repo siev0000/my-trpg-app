@@ -135,8 +135,17 @@
             </div>
 
             <div class="skill-set-header-presets">
-                <span class="skill-set-header-presets-label">登録セット</span>
-                <div class="skill-set-header-presets-list">
+                <button
+                    type="button"
+                    class="skill-set-header-presets-toggle"
+                    :class="{ 'is-open': isHeaderPresetListOpen }"
+                    :aria-expanded="isHeaderPresetListOpen ? 'true' : 'false'"
+                    @click="toggleHeaderPresetList"
+                >
+                    <span>登録セット</span>
+                    <span class="skill-set-header-presets-toggle-state">{{ isHeaderPresetListOpen ? 'ON' : 'OFF' }}</span>
+                </button>
+                <div v-if="isHeaderPresetListOpen" class="skill-set-header-presets-list">
                     <button
                         v-for="entry in presetEntries"
                         :key="entry.name"
@@ -525,6 +534,7 @@ const presetEntries = ref([]);
 const activePresetName = ref('');
 const activePresetIcon = ref('');
 const activePresetIconUrl = ref('');
+const isHeaderPresetListOpen = ref(true);
 const presetStatusText = ref('');
 const presetStatusType = ref('info');
 const sendDiceCount = ref(1);
@@ -606,6 +616,10 @@ const renamePresetSelectedIconUrl = computed(() => {
 
 function normalizeText(value) {
     return String(value || '').trim();
+}
+
+function toggleHeaderPresetList() {
+    isHeaderPresetListOpen.value = !isHeaderPresetListOpen.value;
 }
 
 function normalizeAttackMethods(input, currentValue = '') {
@@ -1627,11 +1641,45 @@ onBeforeUnmount(() => {
     min-height: 36px;
 }
 
-.skill-set-header-presets-label {
+.skill-set-header-presets-toggle {
     flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    border: 1px solid #b4c6da;
+    border-radius: 999px;
+    background: #f4f8fc;
+    color: #2d4b66;
     font-size: 12px;
     font-weight: 800;
-    color: #36536e;
+    padding: 0 10px;
+    cursor: pointer;
+}
+
+.skill-set-header-presets-toggle:hover {
+    background: #e7f1fb;
+    border-color: #8eaed0;
+}
+
+.skill-set-header-presets-toggle.is-open {
+    background: #e6f3ff;
+    border-color: #7ea8d3;
+    color: #1f476d;
+}
+
+.skill-set-header-presets-toggle-state {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 18px;
+    border-radius: 999px;
+    background: #d7e8f8;
+    color: #214a71;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
 }
 
 .skill-set-header-presets-list {

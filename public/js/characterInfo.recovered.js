@@ -1,34 +1,93 @@
-﻿// キャラクターを追加また�E更新する関数 帰ってきたチE�EタでダメージめE��用スキルを更新できるようにした
+﻿// キャラクターを追加または更新する関数 帰ってきたデータでダメージや使用スキルを更新できるようにした
 function addOrUpdateCharacter(characters, newCharacter) {
-    // charactersが�E列でなぁE��合�E初期匁E
+    // charactersが配列でない場合は初期化
     if (!Array.isArray(characters)) {
         characters = [];
     }
-    window.DebaglogSet?.(`キャラクターを追加また�E更新する関数 ${characters} `, newCharacter);
-    // 同名のキャラクターを探ぁE
+    window.DebaglogSet?.(`キャラクターを追加または更新する関数 ${characters} `, newCharacter);
+    // 同名のキャラクターを探す
     const index = characters.findIndex(char => char.name === newCharacter.name);
 
     if (index !== -1) {
-        // 同名のキャラクターが存在する場合�E更新
+        // 同名のキャラクターが存在する場合は更新
         characters[index] = { ...characters[index], ...newCharacter };
         window.DebaglogSet?.(`キャラクター ${newCharacter.name} を更新しました:`, characters[index]);
     } else {
-        // 同名のキャラクターが存在しなぁE��合�E追加
+        // 同名のキャラクターが存在しない場合は追加
         characters = [...characters, newCharacter];
         window.DebaglogSet?.(`キャラクター ${newCharacter.name} を追加しました:`, newCharacter);
     }
-    return characters; // 更新された�E列を返す
+    return characters; // 更新された配列を返す
 }
 
+function toFiniteNumber(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+}
+
+function clamp(value, min, max) {
+    const num = toFiniteNumber(value);
+    if (Number.isFinite(min) && num < min) return min;
+    if (Number.isFinite(max) && num > max) return max;
+    return num;
+}
+
+function getCharacterResourceSummary(character) {
+    const stats = character?.stats || {};
+    const baseStats = stats.baseStats || {};
+    const levelStats = stats.levelStats || {};
+    const itemStats = character?.itemBonuses?.stats || {};
+    const skillBonuses = character?.skillBonuses || {};
+    const damage = character?.damage || {};
+
+    const sizBonus = calculateCorrection(
+        Math.max(
+            toFiniteNumber(baseStats.SIZ || 0),
+            toFiniteNumber(levelStats.SIZ || 0)
+        )
+    );
+
+    const hpMax = Math.max(1, parseInt((
+        (toFiniteNumber(baseStats.HP) || 0)
+        + (toFiniteNumber(levelStats.HP) || 0)
+        + (toFiniteNumber(itemStats["HP+"]) || 0)
+        + (toFiniteNumber(skillBonuses["HP"]) || 0)
+    ) * (1 + sizBonus / 100), 10));
+    const mpMax = Math.max(0, parseInt(
+        (toFiniteNumber(baseStats.MP) || 0)
+        + (toFiniteNumber(levelStats.MP) || 0)
+        + (toFiniteNumber(itemStats["MP+"]) || 0)
+        + (toFiniteNumber(skillBonuses["MP"]) || 0),
+        10
+    ));
+    const stMax = Math.max(0, parseInt(
+        (toFiniteNumber(baseStats.ST) || 0)
+        + (toFiniteNumber(levelStats.ST) || 0)
+        + (toFiniteNumber(itemStats["ST+"]) || 0)
+        + (toFiniteNumber(skillBonuses["SP"]) || 0),
+        10
+    ));
+
+    const hpConsumedPercent = clamp(toFiniteNumber(damage.HP_消費), 0, 100);
+    const hpCurrent = Math.round(hpMax * (1 - hpConsumedPercent / 100));
+    const mpCurrent = Math.round(clamp(mpMax - toFiniteNumber(damage.MP_消費), 0, mpMax));
+    const stCurrent = Math.round(clamp(stMax - toFiniteNumber(damage.ST_消費), 0, stMax));
+
+    return {
+        hp: { current: hpCurrent, max: hpMax },
+        mp: { current: mpCurrent, max: mpMax },
+        st: { current: stCurrent, max: stMax }
+    };
+}
 
 // キャラクターを表示する関数
 async function displayCharacters(characters) {
-    window.DebaglogSet?.('displayCharacters: �N��', characters);
+    window.DebaglogSet?.('displayCharacters: 起動', characters);
     const characterList = document.getElementById('character-list');
-    characterList.innerHTML = ''; // リストを初期匁E
+    characterList.innerHTML = ''; // リストを初期化
 
     if (!characters || characters.length === 0) {
-        characterList.textContent = '�L�����N�^�[��񂪂���܂���B';
+        characterList.textContent = 'キャラクター情報がありません。';
         return;
     }
 
@@ -36,21 +95,40 @@ async function displayCharacters(characters) {
         characters = [characters];
     }
 
-    characters.forEach(character => {
+    const currentName = String(window.playerData?.name || '').trim();
+    const hasCurrent = currentName && characters.some((character) => (
+        String(character?.name || '').trim() === currentName
+    ));
+    const activeName = hasCurrent
+        ? currentName
+        : String(characters[0]?.name || '').trim();
+
+    characters.forEach((character, index) => {
         const characterContainer = document.createElement('div');
         characterContainer.classList.add('character-container');
     
-        // クリチE��イベントを設宁E
-        characterContainer.onclick = function() {
+        // クリックイベントを設定
+        characterContainer.onclick = async function() {
             window.DebaglogSet?.('Character container clicked');
-    
-            // すべてのキャラクターコンチE��から「selected」クラスを削除
-            characterList.querySelectorAll('.character-container.selected').forEach(el => {
+
+            const wasSelected = characterContainer.classList.contains('selected');
+            if (wasSelected) {
+                if (typeof window.openResourceAdjustModalForCharacter === 'function') {
+                    await window.openResourceAdjustModalForCharacter(character?.name || '', {
+                        mode: 'value',
+                        operation: 'decrease'
+                    });
+                }
+                return;
+            }
+
+            // すべてのキャラクターコンテナから「selected」クラスを削除
+            characterList.querySelectorAll('.character-container.selected').forEach((el) => {
                 el.classList.remove('selected');
             });
 
-            characterDataDisplay(character)
-            // クリチE��されたキャラクターコンチE��に「selected」クラスを追加
+            await characterDataDisplay(character);
+            // クリックされたキャラクターコンテナに「selected」クラスを追加
             characterContainer.classList.add('selected');
         };
 
@@ -64,54 +142,36 @@ async function displayCharacters(characters) {
         levelElem.classList.add('character-meta');
         levelElem.textContent = `Lv: ${character.stats.allLv / 10} Ef: ${character.stats.allEf}`;
 
-        const sizBonus = calculateCorrection(
-            Math.max(
-                (character.stats.baseStats.SIZ || "0"),
-                (character.stats.levelStats.SIZ || "0")
-            )
-        );
+        const resources = getCharacterResourceSummary(character);
 
-        window.DebaglogSet?.(" キャラクターを表示する関数 : ",sizBonus, character.stats.baseStats, character.stats.levelStats, character.itemBonuses.stats)
-        // スチE�Eタス計箁E
-        const hp = parseInt(((parseInt(character.stats.baseStats.HP) || 0) + 
-                   (parseInt(character.stats.levelStats.HP) || 0) + 
-                   (parseInt(character.itemBonuses.stats["HP+"]) || 0)+ 
-                   (parseInt(character.skillBonuses["HP"]) || 0)) * ( 1 + sizBonus/100) , 10);
-        const mp = (parseInt(character.stats.baseStats.MP) || 0) + 
-                   (parseInt(character.stats.levelStats.MP) || 0) + 
-                   (parseInt(character.itemBonuses.stats["MP+"]) || 0)+ 
-                   (parseInt(character.skillBonuses["MP"]) || 0);
-        const st = (parseInt(character.stats.baseStats.ST) || 0) + 
-                   (parseInt(character.stats.levelStats.ST) || 0) + 
-                   (parseInt(character.itemBonuses.stats["ST+"]) || 0)+ 
-                   (parseInt(character.skillBonuses["SP"]) || 0);
+        // HP、MP、STバーを作成
+        const hpBar = createStatusBar('HP', resources.hp.current, resources.hp.max);
+        const mpBar = createStatusBar('MP', resources.mp.current, resources.mp.max);
+        const stBar = createStatusBar('ST', resources.st.current, resources.st.max);
 
-        window.DebaglogSet?.(hp, mp, st);
-
-        // HP、MP、STバ�Eを作�E
-        const hpBar = createStatusBar('HP', hp * (1 - parseInt(character.damage.HP_消費 || 0) / 100), hp);
-        const mpBar = createStatusBar('MP', mp - parseInt(character.damage.MP_消費 || 0), mp);
-        const stBar = createStatusBar('ST', st - parseInt(character.damage.ST_消費 || 0), st);
-
-        // 吁E��素をキャラクターコンチE��に追加
+        // 各要素をキャラクターコンテナに追加
         characterContainer.appendChild(nameElem);
         characterContainer.appendChild(levelElem);
         characterContainer.appendChild(hpBar);
         characterContainer.appendChild(mpBar);
         characterContainer.appendChild(stBar);
 
-        // キャラクターコンチE��をリストに追加
+        // キャラクターコンテナをリストに追加
+        const rowName = String(character?.name || '').trim();
+        if ((activeName && rowName === activeName) || (!activeName && index === 0)) {
+            characterContainer.classList.add('selected');
+        }
         characterList.appendChild(characterContainer);
     });
 }
 
-// スチE�Eタスバ�Eを作�Eする関数
+// ステータスバーを作成する関数
 function createStatusBar(label, currentValue, maxValue) {
     const container = document.createElement('div');
     container.classList.add('status-bar');
 
     const labelElem = document.createElement('label');
-    labelElem.textContent = `${label}:`;
+    labelElem.textContent = `${label}`;
 
     const progressContainer = document.createElement('div');
     progressContainer.classList.add('progress-container');
@@ -119,7 +179,7 @@ function createStatusBar(label, currentValue, maxValue) {
 
     // currentValueとmaxValueを数値に変換
     const current = parseInt(currentValue, 10) || 0;
-    const max = parseInt(maxValue, 10) || 1; // maxぁEの場合を避けるためチE��ォルトで1を設宁E
+    const max = parseInt(maxValue, 10) || 1; // maxが0の場合を避けるためデフォルトで1を設定
 
     const progress = document.createElement('progress');
     progress.value = current;
@@ -132,10 +192,10 @@ function createStatusBar(label, currentValue, maxValue) {
 
     progressContainer.appendChild(progress);
     progressContainer.appendChild(valueText);
+
     container.appendChild(labelElem);
     container.appendChild(progressContainer);
 
     return container;
 }
-
 

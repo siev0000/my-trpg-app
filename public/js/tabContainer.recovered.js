@@ -1,4 +1,4 @@
-﻿// 基礎値と上�E値のチE�Eタ保持
+﻿// 基礎値と上昇値のデータ保持
 let baseValues = {};
 let increaseValues = {};
 
@@ -19,9 +19,9 @@ let diceLog = []; // ダイス結果のログ
 let rollCount = 0; // ダイスを振った回数を記録
 
 
-// 基本スチE�Eタスと耐性、技能の設宁E
+// 基本ステータスと耐性、技能の設定
 async function displayBasicStatus(selectedCharacter) {
-    window.DebaglogSet?.("基本スチE�Eタスと耐性、技能の設宁E: ", selectedCharacter)
+    window.DebaglogSet?.("基本ステータスと耐性、技能の設定 : ", selectedCharacter)
     baseValues = {};
     increaseValues = {};
 
@@ -35,7 +35,7 @@ async function displayBasicStatus(selectedCharacter) {
     increaseBodys = {};
 
     bodyType = selectedCharacter.stats.bodyType[0]
-    // スチE�Eタスの設宁E
+    // ステータスの設定
     displaySum.forEach(stat => {
         baseValues[stat] = (stat === "SIZ")
             ? Math.max(parseInt(selectedCharacter.stats.baseStats[stat] || 0), parseInt(selectedCharacter.stats.levelStats[stat] || 0))
@@ -44,121 +44,170 @@ async function displayBasicStatus(selectedCharacter) {
         increaseValues[stat] = parseInt(selectedCharacter.itemBonuses.stats[stat + "+"] || 0) + parseInt(selectedCharacter.skillBonuses[stat] || 0);
     });
 
-    window.DebaglogSet?.("スチE�Eタスの設宁E: ", baseValues, increaseValues, calculateCorrection(parseInt(baseValues.SIZ + increaseValues.SIZ) ))
+    const equipmentMoveRaw = parseInt(selectedCharacter?.itemBonuses?.stats?.["移動倍率"] || 0);
+    const equipmentMovePenalty = equipmentMoveRaw < 0 ? equipmentMoveRaw : 0;
+    const equipmentSpeedRawFromMultiplier = parseInt(selectedCharacter?.itemBonuses?.stats?.["速度倍"] || 0);
+    const equipmentSpeedRawFromAdd = parseInt(selectedCharacter?.itemBonuses?.stats?.["速度+"] || 0);
+    const equipmentSpeedRaw = equipmentSpeedRawFromMultiplier !== 0
+        ? equipmentSpeedRawFromMultiplier
+        : equipmentSpeedRawFromAdd;
+    const equipmentSpeedPenalty = equipmentSpeedRaw < 0 ? equipmentSpeedRaw : 0;
+    const equipmentHitRaw = parseInt(selectedCharacter?.itemBonuses?.stats?.["命中倍"] || 0);
+    const equipmentHitPenalty = equipmentHitRaw < 0 ? equipmentHitRaw : 0;
 
-    // 耐性の設宁E
+    increaseValues.速度 = parseInt(increaseValues.速度 || 0) + equipmentSpeedPenalty;
+    increaseValues.命中 = parseInt(increaseValues.命中 || 0) + equipmentHitPenalty;
+
+    window.DebaglogSet?.("ステータスの設定 : ", baseValues, increaseValues, calculateCorrection(parseInt(baseValues.SIZ + increaseValues.SIZ) ))
+
+    // 耐性の設定
     resistances.forEach(resistance => {
         baseResistances[resistance] = parseInt(selectedCharacter.stats.resistances[resistance] || 0);
         increaseResistances[resistance] = parseInt(selectedCharacter.itemBonuses.stats[resistance] || 0) + parseInt(selectedCharacter.skillBonuses[resistance] || 0);
     });
 
-    // 技能の設宁E
+    // 技能の設定
     talents.forEach(skill => {
         baseSkills[skill] = parseInt(selectedCharacter.stats.skillValues[skill] || 0);
         increaseSkills[skill] = parseInt(selectedCharacter.itemBonuses.stats[skill] || 0) + parseInt(selectedCharacter.skillBonuses[skill] || 0);
     });
 
-    // 肉体displayBodyの設宁E
+    // 肉体displayBodyの設定
     displayBody.forEach(skill => {
         baseBodys[skill] = parseInt(selectedCharacter.stats.bodyAttributes[skill] || 0);
         increaseBodys[skill] = parseInt(selectedCharacter.itemBonuses.stats[skill] || 0) + parseInt(selectedCharacter.skillBonuses[skill] || 0);
     });
 
-    // チE��ォルト値を設定して計箁E
-    const baseSIZ = parseInt(baseBodys['SIZ'] || 170); // baseBodys['SIZ'] ぁEundefined の場吁E170
-    const increaseSIZ = parseInt(increaseBodys['SIZ'] || 0); // increaseBodys['SIZ'] ぁEundefined の場吁E0
-    const base足 = parseInt(baseBodys['足'] || 0); // baseBodys['足'] ぁEundefined の場吁E0
-    const increase足 = parseInt(increaseBodys['足'] || 0); // increaseBodys['足'] ぁEundefined の場吁E0
+    // デフォルト値を設定して計算
+    const baseSIZ = parseInt(baseBodys['SIZ'] || 170); // baseBodys['SIZ'] が undefined の場合 170
+    const increaseSIZ = parseInt(increaseBodys['SIZ'] || 0); // increaseBodys['SIZ'] が undefined の場合 0
+    const base足 = parseInt(baseBodys['足'] || 0); // baseBodys['足'] が undefined の場合 0
+    const increase足 = parseInt(increaseBodys['足'] || 0); // increaseBodys['足'] が undefined の場合 0
 
-    // チE��チE��ログ: チE��ォルト値設定後�E吁E��を確誁E
+    // デバッグログ: デフォルト値設定後の各値を確認
     window.DebaglogSet?.("DEBUG: baseBodys['SIZ']:", baseBodys['SIZ'], "-> 使用値:", baseSIZ);
     window.DebaglogSet?.("DEBUG: increaseBodys['SIZ']:", increaseBodys['SIZ'], "-> 使用値:", increaseSIZ);
     window.DebaglogSet?.("DEBUG: baseBodys['足']:", baseBodys['足'], "-> 使用値:", base足);
     window.DebaglogSet?.("DEBUG: increaseBodys['足']:", increaseBodys['足'], "-> 使用値:", increase足);
 
-    // 合計値を計箁E
+    // 合計値を計算
     const SIZSum = baseSIZ + increaseSIZ;
     const 足Sum = base足 + increase足;
 
-    // チE��チE��ログ: 合計値を確誁E
-    window.DebaglogSet?.("DEBUG: SIZ合訁E(baseSIZ + increaseSIZ):", SIZSum);
-    window.DebaglogSet?.("DEBUG: 足合訁E(base足 + increase足):", 足Sum);
+    // デバッグログ: 合計値を確認
+    window.DebaglogSet?.("DEBUG: SIZ合計 (baseSIZ + increaseSIZ):", SIZSum);
+    window.DebaglogSet?.("DEBUG: 足合計 (base足 + increase足):", 足Sum);
 
-    // 基本移動速度を計箁E基礎値にするなめE3.5
+    // 基本移動速度を計算 基礎値にするなら 3.5
     const movementSpeedBase = SIZSum / 30 + 10 + (7.5 + 足Sum) + (baseValues.速度 / 5 * 1) ;
 
-    // チE��チE��ログ: 基本移動速度を確誁E
+    // デバッグログ: 基本移動速度を確認
     window.DebaglogSet?.("DEBUG: 基本移動速度 (SIZSum / 30 + 10 + (7.5 + 足Sum)):", movementSpeedBase);
 
-    // 増加ボ�EナスのチE��ォルト値を設定して計箁E
-    const itemBonus移勁E= parseInt(selectedCharacter.itemBonuses.stats['移勁E] || 0); // チE��ォルチE0
-    const skillBonus移勁E= parseInt(selectedCharacter.skillBonuses['移勁E] || 0); // チE��ォルチE0
+    // 増加ボーナスのデフォルト値を設定して計算
+    const itemBonus移動 = parseInt(selectedCharacter.itemBonuses.stats['移動'] || 0); // デフォルト 0
+    const skillBonus移動 = parseInt(selectedCharacter.skillBonuses['移動'] || 0); // デフォルト 0
 
-    // チE��チE��ログ: 吁E�Eーナスを確誁E
-    window.DebaglogSet?.("DEBUG: itemBonuses['移勁E]:", selectedCharacter.itemBonuses.stats['移勁E], "-> 使用値:", itemBonus移勁E;
-    window.DebaglogSet?.("DEBUG: skillBonuses['移勁E]:", selectedCharacter.skillBonuses['移勁E], "-> 使用値:", skillBonus移勁E;
+    // デバッグログ: 各ボーナスを確認
+    window.DebaglogSet?.("DEBUG: itemBonuses['移動']:", selectedCharacter.itemBonuses.stats['移動'], "-> 使用値:", itemBonus移動);
+    window.DebaglogSet?.("DEBUG: skillBonuses['移動']:", selectedCharacter.skillBonuses['移動'], "-> 使用値:", skillBonus移動);
 
-    // 増加ボ�Eナス合計を計箁E
-    const movementSpeedIncrease = itemBonus移勁E+ skillBonus移勁E
+    // 増加ボーナス合計を計算
+    const movementSpeedIncrease = itemBonus移動 + skillBonus移動 + equipmentMovePenalty;
 
-    // チE��チE��ログ: 増加ボ�Eナスを確誁E
-    window.DebaglogSet?.("DEBUG: 増加ボ�Eナス (itemBonus移勁E+ skillBonus移勁E:", movementSpeedIncrease);
+    // デバッグログ: 増加ボーナスを確認
+    window.DebaglogSet?.("DEBUG: 増加ボーナス (itemBonus移動 + skillBonus移動 + equipmentMovePenalty):", movementSpeedIncrease);
 
-    // 最終的な移動速度を設宁E
-    baseBodys['移勁E] = parseInt(movementSpeedBase);
-    increaseBodys['移勁E] = parseInt(movementSpeedIncrease);
+    // 最終的な移動速度を設定
+    baseBodys['移動'] = parseInt(movementSpeedBase);
+    increaseBodys['移動'] = parseInt(movementSpeedIncrease);
 
-    // チE��チE��ログ: 移動速度設定�E最終結果
-    window.DebaglogSet?.("移動速度の設定完亁E");
-    window.DebaglogSet?.("  基本移動速度 (baseBodys['移勁E]):", baseBodys['移勁E]);
-    window.DebaglogSet?.("  増加ボ�Eナス (increaseBodys['移勁E]):", increaseBodys['移勁E]);
+    // 飛行速度: 羽リーチが1以上のときのみ計算
+    const bodyType羽リーチ = (bodyType && Number.isFinite(Number(bodyType["羽リーチ"]))) ? Number(bodyType["羽リーチ"]) : 0;
+    const 羽リーチ合計 = parseInt(baseBodys['羽リーチ'] || 0) + parseInt(increaseBodys['羽リーチ'] || 0) + bodyType羽リーチ;
+    const speedBaseForFlight = parseInt(baseValues.速度 || 0);
+    const passiveMoveSpeedBonus = parseInt(selectedCharacter?.skillBonuses?.["移動"] || 0);
+    const fullPowerRate = (typeof window?.getFullPowerModeState === "function" && window.getFullPowerModeState()) ? 2 : 1;
+    console.log("[飛行計算][速度ペナルティ]", {
+        equipmentMoveRaw,
+        equipmentMovePenalty,
+        equipmentSpeedRawFromMultiplier,
+        equipmentSpeedRawFromAdd,
+        equipmentSpeedRaw,
+        equipmentSpeedPenalty,
+        equipmentHitRaw,
+        equipmentHitPenalty,
+        passiveMoveSpeedBonus,
+        fullPowerRate
+    });
+
+    if (羽リーチ合計 >= 1) {
+        const flightBase = 羽リーチ合計 + 15 + (speedBaseForFlight / 5 * fullPowerRate) + equipmentSpeedPenalty;
+        baseBodys['飛行'] = Math.max(0, Math.trunc(flightBase));
+        increaseBodys['飛行'] = passiveMoveSpeedBonus;
+    } else {
+        baseBodys['飛行'] = 0;
+        increaseBodys['飛行'] = 0;
+    }
+
+    window.DebaglogSet?.("飛行速度の設定:", {
+        羽リーチ合計,
+        speedBaseForFlight,
+        equipmentSpeedPenalty,
+        passiveMoveSpeedBonus,
+        fullPowerRate,
+        base飛行: baseBodys['飛行'],
+        increase飛行: increaseBodys['飛行']
+    });
+
+    // デバッグログ: 移動速度設定の最終結果
+    window.DebaglogSet?.("移動速度の設定完了:");
+    window.DebaglogSet?.("  基本移動速度 (baseBodys['移動']):", baseBodys['移動']);
+    window.DebaglogSet?.("  増加ボーナス (increaseBodys['移動']):", increaseBodys['移動']);
     // +(速度/5)*3.5)
 
-    window.DebaglogSet?.("基礎値と上�E値設宁E", baseValues, increaseValues, baseResistances, increaseResistances, baseSkills, increaseSkills, baseBodys, increaseBodys);
+    window.DebaglogSet?.("基礎値と上昇値設定:", baseValues, increaseValues, baseResistances, increaseResistances, baseSkills, increaseSkills, baseBodys, increaseBodys);
 
     const sizBonus = calculateCorrection(parseInt(baseValues.SIZ + increaseValues.SIZ))
 
     if (sizBonus > 0) {
-        const attackBonus = parseInt(baseValues.攻撁E* (sizBonus / 100));
+        const attackBonus = parseInt(baseValues.攻撃 * (sizBonus / 100));
         const speedPenalty = parseInt(baseValues.速度 * (sizBonus / 100));
         const intimidationBonus = parseInt((sizBonus * 3.5));
         const stealthPenalty = parseInt((sizBonus * 3.5));
         const armorBonus = parseInt(sizBonus * 3.5);
     
-        window.DebaglogSet?.("攻撁E�Eーナス:", attackBonus);
-        window.DebaglogSet?.("速度ペナルチE��:", speedPenalty);
-        window.DebaglogSet?.("威圧ボ�Eナス:", intimidationBonus);
-        window.DebaglogSet?.("隠寁E�EナルチE��:", stealthPenalty);
-        window.DebaglogSet?.("外皮ボ�Eナス:", armorBonus);
+        window.DebaglogSet?.("攻撃ボーナス:", attackBonus);
+        window.DebaglogSet?.("速度ペナルティ:", speedPenalty);
+        window.DebaglogSet?.("威圧ボーナス:", intimidationBonus);
+        window.DebaglogSet?.("隠密ペナルティ:", stealthPenalty);
+        window.DebaglogSet?.("外皮ボーナス:", armorBonus);
 
         // increaseValues.HP += attackBonus;
-        increaseValues.攻撁E+= attackBonus;
+        increaseValues.攻撃 += attackBonus;
         increaseValues.速度 -= speedPenalty;
         increaseSkills.威圧 += intimidationBonus;
-        increaseSkills.隠寁E-= stealthPenalty;
+        increaseSkills.隠密 -= stealthPenalty;
         increaseBodys.外皮 += armorBonus;
     
-        // 結果をログに出劁E
-        window.DebaglogSet?.("更新後�E増加値:");
+        // 結果をログに出力
+        window.DebaglogSet?.("更新後の増加値:");
         window.DebaglogSet?.("HP:", increaseValues.HP);
-        window.DebaglogSet?.("攻撁E", increaseValues.攻撁E;
+        window.DebaglogSet?.("攻撃:", increaseValues.攻撃);
         window.DebaglogSet?.("速度:", increaseValues.速度);
         window.DebaglogSet?.("威圧:", increaseSkills.威圧);
-        window.DebaglogSet?.("隠寁E", increaseSkills.隠寁E;
+        window.DebaglogSet?.("隠密:", increaseSkills.隠密);
         window.DebaglogSet?.("外皮:", increaseBodys.外皮);
     }
 
-    // 外皮、外郭裁E��、E��体�E軽減値を計算し、四捨五�Eする
-    increaseBodys.外皮 = Math.round((increaseBodys.外皮 * increaseBodys.外皮 / 2000 * 0.3));
-    increaseBodys.外郭裁E�� = Math.round((increaseBodys.外郭裁E�� * increaseBodys.外郭裁E�� / 2000 * 1.1));
-    increaseBodys.鋼佁E= Math.round((increaseBodys.鋼佁E/ 25 * 1.1));
-
-    // 肉体部位�E威力設宁E
+    // 外皮/外殻(装甲)/鋼体は、最終合算後の値から軽減を作って耐性へ反映する。
+    applyBodyArmorDerivedReductions(selectedCharacter);
+    // 肉体部位の威力設定
     const calculatedPowers = calculatePower(displayBody, displaySum);
-    window.DebaglogSet?.("肉体部位�E威力設定　:", calculatedPowers);
+    window.DebaglogSet?.("肉体部位の威力設定　:", calculatedPowers);
     await updateAllAttackOptions()
 
-    const result = { ...baseValues, ...baseSkills }; // baseValues をコピ�E
+    const result = { ...baseValues, ...baseSkills }; // baseValues をコピー
     const increase = { ...increaseValues, ...increaseSkills }
     for (const key in increase) {
       result[key] = (result[key] || 0) + increase[key];
@@ -167,44 +216,172 @@ async function displayBasicStatus(selectedCharacter) {
     result['Lv'] = selectedCharacter.stats.allLv
     result['Ef'] = selectedCharacter.stats.allEf
 
-    // 選択キャラのチE�Eタを�Eれる
+    // 選択キャラのデータを入れる
     window.DebaglogSet?.("合計結果 :",  result);
     statusCharacter = result
+
+    const levelRows = Array.isArray(selectedCharacter?.acquiredClasses)
+        ? selectedCharacter.acquiredClasses.filter((entry) => entry && entry.stats)
+        : [];
+    levelsTableState.rows = levelRows;
+    await renderLevelsTableByState();
     
-    // 攻撁E��段を変更
+    // 攻撃手段を変更
     await populateAttackOptions(attackOptions);
 
 
 }
-// 外皮、外郭裁E��、E��体に基づぁE��軽減データを生成する関数
+function getFinalBodyValue(...keys) {
+    const normalizedKeys = keys
+        .map((key) => String(key || "").trim())
+        .filter(Boolean);
+    let fallbackValue = 0;
+    let hasFallback = false;
+    for (const key of normalizedKeys) {
+        const hasBase = Object.prototype.hasOwnProperty.call(baseBodys, key);
+        const hasIncrease = Object.prototype.hasOwnProperty.call(increaseBodys, key);
+        const hasBodyType = Boolean(bodyType && Object.prototype.hasOwnProperty.call(bodyType, key));
+        if (!hasBase && !hasIncrease && !hasBodyType) continue;
+        const base = Number(baseBodys[key] || 0);
+        const increase = Number(increaseBodys[key] || 0);
+        const typeValue = Number((bodyType && bodyType[key]) || 0);
+        const total = base + increase + typeValue;
+        if (!hasFallback) {
+            fallbackValue = total;
+            hasFallback = true;
+        }
+        if (total !== 0) {
+            return total;
+        }
+    }
+    return hasFallback ? fallbackValue : 0;
+}
+
+function addGeneratedResistances(type, sourceValue) {
+    const generated = generateResistances(type, sourceValue);
+    Object.entries(generated).forEach(([key, value]) => {
+        const current = Number(increaseResistances[key] || 0);
+        increaseResistances[key] = Math.round(current + Number(value || 0));
+    });
+}
+
+const STEEL_BODY_REDUCTION_RATE_BY_EQUIP_TYPE = Object.freeze({
+    "鎧": 0.75,
+    "胴着": 0.60,
+    "服": 0.35,
+    "法衣": 0.35,
+    "肌着": 0.25,
+    "肌防着": 0.25,
+    "核": 0.50,
+    "起動核": 0.25,
+    "防衣": 0.35
+});
+
+function collectSteelBodyReductionRates(selectedCharacter) {
+    const equipment = (selectedCharacter && typeof selectedCharacter === "object" && selectedCharacter.equipmentSlot)
+        ? selectedCharacter.equipmentSlot
+        : {};
+    const matched = [];
+    Object.entries(equipment || {}).forEach(([slot, item]) => {
+        if (!item || typeof item !== "object") return;
+        const type = String(item?.種類 || "").trim();
+        if (!type) return;
+        const rate = Number(STEEL_BODY_REDUCTION_RATE_BY_EQUIP_TYPE[type]);
+        if (!Number.isFinite(rate) || rate <= 0) return;
+        matched.push({
+            slot: String(slot || ""),
+            name: String(item?.名前 || ""),
+            type,
+            rate
+        });
+    });
+    matched.sort((a, b) => b.rate - a.rate);
+    return {
+        kt2756: matched[0]?.rate || 0,
+        kt2757: matched[1]?.rate || 0,
+        matched
+    };
+}
+
+function applyBodyArmorDerivedReductions(selectedCharacter = null) {
+    const finalOuterSkin = getFinalBodyValue("外皮");
+    const finalOuterShell = getFinalBodyValue("外殻装甲", "外殻", "外郭装甲");
+    const finalSteel = getFinalBodyValue("鋼体");
+    const level = Number(selectedCharacter?.stats?.allLv || selectedCharacter?.Lv || 0);
+    const { kt2756, kt2757, matched } = collectSteelBodyReductionRates(selectedCharacter);
+    // Excel式: MAX((4*B/100*MAX(1-KT1-KT2,0)) + C/25, 0)
+    const levelTerm = (4 * level / 100) * Math.max(1 - kt2756 - kt2757, 0);
+
+    // Excel式:
+    // 外皮 = IF(C>0, C*C/2000*0.1+5, 0)
+    // 外殻 = IF(AS>4, 1+(C*C/2000)*0.7, 0)
+    const outerSkinSource = finalOuterSkin > 0
+        ? ((finalOuterSkin * finalOuterSkin / 2000) * 0.1 + 5)
+        : 0;
+    const outerShellSource = finalOuterShell > 4
+        ? (1 + ((finalOuterShell * finalOuterShell / 2000) * 0.7))
+        : 0;
+    const steelSource = Math.max(levelTerm + (finalSteel / 25), 0);
+
+    addGeneratedResistances("外皮", outerSkinSource);
+    addGeneratedResistances("外殻", outerShellSource);
+    addGeneratedResistances("鋼体", steelSource);
+
+    console.log("外皮/外殻/鋼体 軽減反映:", {
+        finalBodyValues: {
+            外皮: finalOuterSkin,
+            外殻: finalOuterShell,
+            鋼体: finalSteel
+        },
+        steelFormulaInputs: {
+            Lv_B2708: level,
+            KT2756: kt2756,
+            KT2757: kt2757,
+            ktCandidates: matched.map((entry) => ({
+                slot: entry.slot,
+                name: entry.name,
+                type: entry.type,
+                rate: entry.rate
+            }))
+        },
+        reductionSourceValues: {
+            外皮: outerSkinSource,
+            外殻: outerShellSource,
+            鋼体: steelSource
+        }
+    });
+}
+
+// 外皮、外殻装甲、鋼体に基づいて軽減データを生成する関数
 function generateResistances(type, value) {
-    // 吁E��イプごとのルール設宁E
+    const normalizedType = (String(type || "").trim() === "外郭装甲" || String(type || "").trim() === "外殻")
+        ? "外殻装甲"
+        : String(type || "").trim();
+    // 各タイプごとのルール設定
     const rules = {
-        "外郭裁E��": {
-            "物琁E��渁E: value / 10,"魔法軽渁E: value / 10,"遠隔軽渁E: value / 20,
-            "刁E��軽渁E: value / 20,"貫通軽渁E: value / 20,"打撃軽渁E: value / 20,
-            "炎軽渁E: value / 20,"氷軽渁E: value / 20,"雷軽渁E: value / 20,"酸軽渁E: value / 20,
-            "音波軽渁E: value / 20,"闁E��渁E: value / 20,"光軽渁E: value / 20
+        "外殻装甲": {
+            "物理軽減": value ,"魔法軽減": value / 2,"遠隔軽減": value / 2,
+            "切断軽減": value * 0.45,"貫通軽減": value * 0.45,"打撃軽減": value * 0.45,
+            "炎軽減": value * 0.3,"氷軽減": value * 0.3,"雷軽減": value * 0.3,"酸軽減": value * 0.3,
+            "音波軽減": value * 0.3,"闇軽減": value * 0.3,"光軽減": value * 0.3
         },
         "外皮": {
-            "物琁E��渁E: value / 10,"魔法軽渁E: value / 10,"遠隔軽渁E: value / 20,
-            "刁E��軽渁E: value / 20,"貫通軽渁E: value / 20,"打撃軽渁E: value / 20,
-            "炎軽渁E: value / 20,"氷軽渁E: value / 20,"雷軽渁E: value / 20,"酸軽渁E: value / 20,
-            "音波軽渁E: value / 20,"闁E��渁E: value / 20,"光軽渁E: value / 20
+            "物理軽減": value ,"魔法軽減": value * 0,"遠隔軽減": value * 0,
+            "切断軽減": value / 1.25,"貫通軽減": value / 1.25,"打撃軽減": value / 1.25
         },
-        "鋼佁E: {
-            "物琁E��渁E: value / 10,"魔法軽渁E: value / 10,"遠隔軽渁E: value / 20,
-            "刁E��軽渁E: value / 20,"貫通軽渁E: value / 20,"打撃軽渁E: value / 20,
-            "炎軽渁E: value / 20,"氷軽渁E: value / 20,"雷軽渁E: value / 20,"酸軽渁E: value / 20,
-            "音波軽渁E: value / 20,"闁E��渁E: value / 20,"光軽渁E: value / 20
+        "鋼体": {
+            "物理軽減": value ,"魔法軽減": value / 4,"遠隔軽減": value / 4,
+            "切断軽減": value / 2,"貫通軽減": value *0.72,"打撃軽減": value * 1.19,
+            "炎軽減": value * 0.2,"氷軽減": value * 0.2,"雷軽減": value * 0.2,"酸軽減": value * 0.2,
+            "音波軽減": value * 0.2,"闇軽減": value * 0.2,"光軽減": value * 0.2
         }
     };
 
-    // 持E��されたタイプが存在する場合、対応する軽減データを返す
-    if (rules[type]) {
-        return rules[type];
+    // 指定されたタイプが存在する場合、対応する軽減データを返す
+    if (rules[normalizedType]) {
+        return rules[normalizedType];
     } else {
-        throw new Error(`Unknown type: ${type}`);
+        throw new Error(`Unknown type: ${normalizedType}`);
     }
 }
 function calculateCorrection(value) {
@@ -224,19 +401,64 @@ function calculateCorrection(value) {
 //     }
 // }
 
-// 肉体部位�E威力設宁E
+const BODY_ATTACK_OPTION_PROFILES = {
+    素手: { 全力: 95, 切断: 60, 貫通: 70, 打撃: 100, ガード: 90, 最低ダメージ: 10, Cr率: 10, Cr威力: 125, 速度倍: 0, 命中倍: -5, 攻撃回数: 2 },
+    角:   { 全力: 105, 切断: 0,  貫通: 110,打撃: 90,   ガード: 60, 最低ダメージ: 7,  Cr率: 10, Cr威力: 125, 速度倍: -3, 命中倍: -3, 攻撃回数: 1 },
+    牙:   { 全力: 110, 切断: 95, 貫通: 100,打撃: 60,  ガード: 60, 最低ダメージ: 30, Cr率: 5,  Cr威力: 135, 速度倍: -15,命中倍: -15,攻撃回数: 1 },
+    爪:   { 全力: 100, 切断: 100,貫通: 85, 打撃: 20,  ガード: 85, 最低ダメージ: 10, Cr率: 15, Cr威力: 125, 速度倍: 0,  命中倍: -5, 攻撃回数: 2 },
+    羽:   { 全力: 85,  切断: 0,  貫通: 0,  打撃: 55,  ガード: 55, 最低ダメージ: 5,  Cr率: 5,  Cr威力: 120, 速度倍: -1, 命中倍: 0,  攻撃回数: 2 },
+    尾:   { 全力: 95,  切断: 0,  貫通: 0,  打撃: 90,  ガード: 65, 最低ダメージ: 5,  Cr率: 10, Cr威力: 115, 速度倍: -5, 命中倍: -5, 攻撃回数: 1 }
+};
+
+function scaleByPercent(baseValue, percent) {
+    const base = Number(baseValue) || 0;
+    const rate = (Number(percent) || 0) / 100;
+    return Math.max(0, Math.round(base * rate));
+}
+
+function buildBodyAttackSummary(part, basePower) {
+    const profile = BODY_ATTACK_OPTION_PROFILES[part];
+    if (!profile) return null;
+
+    const summary = {
+        名前: part,
+        種類: part,
+        攻撃手段: part,
+        全力: profile.全力,
+        切断: scaleByPercent(basePower, profile.切断),
+        貫通: scaleByPercent(basePower, profile.貫通),
+        打撃: scaleByPercent(basePower, profile.打撃),
+        防御性能: scaleByPercent(basePower, profile.ガード),
+        防御倍率: scaleByPercent(basePower, profile.ガード),
+        射撃: 0,
+        最低ダメージ: profile.最低ダメージ,
+        Cr率: profile.Cr率,
+        Cr威力: profile.Cr威力,
+        速度倍: profile.速度倍,
+        命中倍: profile.命中倍,
+        攻撃回数: profile.攻撃回数,
+        // calculatePower 側で攻撃/防御ステータスを織り込んでいるため、
+        // skillContainer 側での再乗算を避けるためのフラグ。
+        攻撃判定適用済み: 1,
+        防御判定適用済み: 1
+    };
+
+    return summary;
+}
+
+// 肉体部位の威力設定
 function calculatePower() {
-    const defenseInfluence = ((baseBodys["鋼佁E] || 0) / 500) * 0.15; // 鋼体による影響めE5%に調整
-    const attackInt = (baseValues.攻撁E+ increaseValues.攻撁E;
+    const defenseInfluence = ((baseBodys["鋼体"] || 0) / 500) * 0.15; // 鋼体による影響を15%に調整
+    const attackInt = (baseValues.攻撃 + increaseValues.攻撃);
     const defenseInt = (baseValues.防御 + increaseValues.防御);
 
-    // 属性の値を取得する関数、存在しなぁE��合�E0を返す
+    // 属性の値を取得する関数、存在しない場合は0を返す
     const getBodyValue = (attribute) => (baseBodys[attribute] || 0) + (increaseBodys[attribute] || 0);
 
-    // 一般皁E��属性の威力・防御を計箁E
+    // 一般的な属性の威力・防御を計算
     const calculateAttributes = (baseValue, attribute, attackMultiplier, defenseMultiplier) => {
         const bodyValue = getBodyValue(attribute);
-        if (bodyValue === 0) return { 威力: 0, 防御: 0 }; // 値ぁEの場合�E威力・防御めEに設宁E
+        if (bodyValue === 0) return { 威力: 0, 防御: 0 }; // 値が0の場合は威力・防御を0に設定
 
         return {
             威力: Math.floor(Math.round((baseValue + (bodyValue / 10) * attackMultiplier) * (1 + attackInt / 100 + defenseInfluence))),
@@ -244,13 +466,13 @@ function calculatePower() {
         };
     };
 
-    // 特殊な計算が忁E��な「素手」�E威力・防御を計算（�E期値10�E�E
+    // 特殊な計算が必要な「素手」の威力・防御を計算（初期値10）
     const calculateHandAttributes = () => {
         const bodyValue = Math.max(
             getBodyValue("外皮") * 0.75, 
             getBodyValue("外殻") * 0.9, 
-            getBodyValue("鋼佁E), 100
-        ) || 100; // 数値がなぁE��合�E初期値めE0に設宁E
+            getBodyValue("鋼体"), 100
+        ) || 100; // 数値がない場合の初期値を10に設定
 
         return {
             威力: Math.floor(Math.round((4 + (bodyValue / 10) * 0.8) * (1 + attackInt / 100 + defenseInfluence))),
@@ -259,51 +481,61 @@ function calculatePower() {
     };
 
     return {
-        见E calculateAttributes(5, "见E, 1.0, 1.1),
-        牁E calculateAttributes(5, "牁E, 1.0, 1.0),
+        角: calculateAttributes(5, "角", 1.0, 1.1),
+        牙: calculateAttributes(5, "牙", 1.0, 1.0),
         爪: calculateAttributes(5, "爪", 0.9, 0.7),
         羽: calculateAttributes(5, "羽", 0.7, 0.9),
         尾: calculateAttributes(5, "尾", 0.85, 0.6),
-        素扁E calculateHandAttributes() // 特殊な計算を適用
+        素手: calculateHandAttributes() // 特殊な計算を適用
     };
 }
 
 
 
 
-// 吁E��位�EチE�Eタを攻撁E��段に更新
+// 各部位のデータを攻撃手段に更新
 async function updateAllAttackOptions() {
     const powerData = calculatePower();
 
     Object.keys(powerData).forEach((part) => {
         const data = powerData[part];
-        updateAttackOption(part, { 威力: data.威力, 防御: data.防御 });
+        const basePower = Number(data?.威力) || 0;
+        const summary = buildBodyAttackSummary(part, basePower);
+        const guard = summary ? Number(summary.防御性能) || 0 : (Number(data?.防御) || 0);
+        updateAttackOption(part, {
+            威力: basePower,
+            防御: guard,
+            総合: summary
+        });
     });
 
     console.log
 }
 
 
-// 攻撁E��段を更新する
+// 攻撃手段を更新する
 // updateAttackOption("武器1", { "label": "新しい武器1", "威力": 100, "属性": 60, "防御": 70 });
-// updateAttackOption("爪", { "威力": 50 }); // 部刁E��な更新も可能
+// updateAttackOption("爪", { "威力": 50 }); // 部分的な更新も可能
 function updateAttackOption(value, newData) {
     // valueプロパティが一致するオブジェクトを検索
 
-    window.DebaglogSet?.("updateAttackOption 攻撁E��段を更新する :", value, newData )
+    window.DebaglogSet?.("updateAttackOption 攻撃手段を更新する :", value, newData )
 
     const option = attackOptions.find(option => option.value === value);
 
     window.DebaglogSet?.("updateAttackOption option :", option )
 
-    // 該当オブジェクトがあれば、�Eロパティを更新
+    // 該当オブジェクトがあれば、プロパティを更新
     if (option) {
         option.label = newData.label || option.label;
         option.威力 = newData.威力 !== undefined ? newData.威力 : option.威力;
         option.属性 = newData.属性 !== undefined ? newData.属性 : option.属性;
         option.防御 = newData.防御 !== undefined ? newData.防御 : option.防御;
+        if (newData.総合 !== undefined) {
+            option.総合 = newData.総合;
+        }
     } else {
-        window.DebaglogSet?.(`Error: ${value} のチE�Eタが見つかりません`);
+        window.DebaglogSet?.(`Error: ${value} のデータが見つかりません`);
     }
 }
 
@@ -326,12 +558,12 @@ function applyAdaptiveLabelFontSize(labelElement, text) {
     labelElement.style.fontSize = `${fontSize}px`;
 }
 
-// スチE�Eタス、耐性、技能をカチE��リごとに表示する関数
+// ステータス、耐性、技能をカテゴリごとに表示する関数
 function displayStats(containerId, baseData, increaseData, bodyType) {
     const container = document.getElementById(containerId);
 
     if (!container) {
-        console.error(`Error: コンチE�� '${containerId}' が見つかりません`);
+        console.error(`Error: コンテナ '${containerId}' が見つかりません`);
         return;
     }
 
@@ -351,18 +583,18 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
         const totalValue = baseValue + increaseValue;
         allStatsBase += baseValue;
 
-        if (totalValue === 0) return;
+        if (totalValue === 0 && !(containerId === "body-section" && stat === "飛行")) return;
 
         let displayLabel = stat;
         let groupType = "";
 
         if (containerId === "body-section") {
-            displayLabel = stat.replace("リーチE, "R");
+            displayLabel = stat.replace("リーチ", "R");
         }
 
         if (containerId === "resistance-section") {
-            if (stat.endsWith("軽渁E)) {
-                displayLabel = stat.replace(/軽渁E/, "");
+            if (stat.endsWith("軽減")) {
+                displayLabel = stat.replace(/軽減$/, "");
                 groupType = "reduce";
             } else if (stat.endsWith("耐性")) {
                 displayLabel = stat.replace(/耐性$/, "");
@@ -437,7 +669,7 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
             const reduceHeadCell = document.createElement("th");
             reduceHeadCell.className = "stats-group-title reduce";
             reduceHeadCell.colSpan = 2;
-            reduceHeadCell.textContent = "軽渁E;
+            reduceHeadCell.textContent = "軽減";
             reduceHead.appendChild(reduceHeadCell);
             tableBody.appendChild(reduceHead);
             reduceRows.forEach(renderStatRow);
@@ -514,7 +746,7 @@ function ensureStatusCategoryIcons() {
 }
 
 
-// 合計値表示の刁E��替え関数
+// 合計値表示の切り替え関数
 function updateToggleButtonUI() {
     const toggleButton = document.getElementById("toggle-button");
     if (!toggleButton) return;
@@ -522,14 +754,14 @@ function updateToggleButtonUI() {
     toggleButton.classList.toggle("is-total", isTotalView);
     toggleButton.setAttribute("aria-pressed", isTotalView ? "true" : "false");
     toggleButton.textContent = isTotalView
-        ? "合計値表示中�E�基礎値へ�E�E
-        : "基礎値表示中�E�合計値へ�E�E;
+        ? "合計値表示中（基礎値へ）"
+        : "基礎値表示中（合計値へ）";
 }
 
 function toggleTotalView() {
     isTotalView = !isTotalView;
-    window.DebaglogSet?.("合計値表示の刁E��替え関数 : ", bodyType)
-    displayStats("stats-section", baseValues, increaseValues, bodyType); // 身体�E劁E
+    window.DebaglogSet?.("合計値表示の切り替え関数 : ", bodyType)
+    displayStats("stats-section", baseValues, increaseValues, bodyType); // 身体能力
     displayStats("body-section",  baseBodys, increaseBodys, bodyType); // 肉体値
     displayStats("resistance-section", baseResistances, increaseResistances, bodyType); // 耐性
     displayStats("talents-section", baseSkills, increaseSkills, bodyType); // 技能値
@@ -537,9 +769,9 @@ function toggleTotalView() {
     ensureStatusCategoryIcons();
 }
 
-// 合計値表示の刁E��替え関数
+// 合計値表示の切り替え関数
 function statsView() {
-    displayStats("stats-section", baseValues, increaseValues, bodyType); // 身体�E劁E
+    displayStats("stats-section", baseValues, increaseValues, bodyType); // 身体能力
     displayStats("body-section",  baseBodys, increaseBodys, bodyType); // 肉体値
     displayStats("resistance-section", baseResistances, increaseResistances, bodyType); // 耐性
     displayStats("talents-section", baseSkills, increaseSkills, bodyType); // 技能値
@@ -551,14 +783,14 @@ function statsView() {
 function rollDice() {
     const diceCount = parseInt(document.getElementById("dice-count").value);
     const diceMax = parseInt(document.getElementById("dice-max").value);
-    rollCount++; // 回数をインクリメンチE
+    rollCount++; // 回数をインクリメント
     
     const rollResults = [];
     for (let i = 0; i < diceCount; i++) {
         rollResults.push(Math.floor(Math.random() * diceMax) + 1);
     }
     
-    // 現在時刻を取征E
+    // 現在時刻を取得
     const now = new Date();
     const time = now.toLocaleTimeString();
     
@@ -567,7 +799,7 @@ function rollDice() {
     logEntry.innerHTML = `<strong>${rollCount}回目 (${time}):</strong> ${rollResults.join(", ")}`;
     document.getElementById("dice-log").prepend(logEntry); // 新しい結果を上に追加
 
-    // 最大30件の結果のみ表示するように制陁E
+    // 最大30件の結果のみ表示するように制限
     const logItems = document.getElementById("dice-log").getElementsByTagName("li");
     if (logItems.length > 30) {
         logItems[logItems.length - 1].remove();
@@ -576,7 +808,7 @@ function rollDice() {
 
 
 // function updateDisplays(setData) {
-//     // 持ち物、裁E��、倉庫それぞれの描画
+//     // 持ち物、装備、倉庫それぞれの描画
 // //     displayInventory(setData.inventory);
 // //     displayEquipment(setData.equipment);
 //     // displayStorage(setData.storage);
@@ -603,7 +835,7 @@ function collectDetailItems(source) {
     const values = Array.isArray(source) ? source : Object.values(source);
     return values.filter((item) => {
         if (!item || typeof item !== "object") return false;
-        return Boolean(item.名前 || item.name || item.説昁E|| item.種顁E|| item.タイチE|| item.type);
+        return Boolean(item.名前 || item.name || item.説明 || item.種類 || item.タイプ || item.type);
     });
 }
 
@@ -613,7 +845,7 @@ function openItemDetailModalBridge(item, sourceItems = null, titleText = "詳細
         return;
     }
 
-    const fallbackText = String(item?.説昁E?? "").trim() || "詳細惁E��なぁE;
+    const fallbackText = String(item?.説明 ?? "").trim() || "詳細情報なし";
     if (typeof window.openConfirmModal === "function") {
         window.openConfirmModal(fallbackText);
     } else {
@@ -627,7 +859,7 @@ function attachDetailOpenBehavior(targetElement, item, detailItems, titleText = 
     targetElement.classList.add("item-clickable-cell");
     targetElement.tabIndex = 0;
     targetElement.setAttribute("role", "button");
-    const itemName = String(item?.名前 || item?.name || "アイチE��");
+    const itemName = String(item?.名前 || item?.name || "アイテム");
     targetElement.setAttribute("aria-label", `${itemName}の詳細を表示`);
 
     const openDetail = () => openItemDetailModalBridge(item, detailItems, titleText);
@@ -649,23 +881,23 @@ function attachDetailOpenBehavior(targetElement, item, detailItems, titleText = 
 }
 
 // updateAttackOption("武器1", { "label": "新しい武器1", "威力": 100, "属性": 60, "防御": 70 });
-// updateAttackOption("爪", { "威力": 50 }); // 部刁E��な更新も可能
+// updateAttackOption("爪", { "威力": 50 }); // 部分的な更新も可能
 
 // 手鎧があるなら素手を更新
-// 裁E��チE�Eタをテーブルに挿入する関数
+// 装備データをテーブルに挿入する関数
 async function displayEquipment(equipment, base, increase) {
 
-    window.DebaglogSet?.(" 裁E��チE�Eタをテーブルに挿入する関数: ", equipment, base, increase)
-    // 裁E��チE�Eタを表示するチE�Eブルのtbodyをクリア
+    window.DebaglogSet?.(" 装備データをテーブルに挿入する関数: ", equipment, base, increase)
+    // 装備データを表示するテーブルのtbodyをクリア
     tbody.innerHTML = "";
     const detailItems = collectDetailItems(equipment);
 
-    // 吁E��E��チE�Eタを行として追加
+    // 各装備データを行として追加
     for (const slot in equipment) {
-        window.DebaglogSet?.(" 裁E��チE�Eタをテーブルに挿入する関数 slot : ", slot)
+        window.DebaglogSet?.(" 装備データをテーブルに挿入する関数 slot : ", slot)
         const item = equipment[slot];
         if (item && typeof item === "object") {
-            item[ITEM_RUNTIME_LOCATION_KEY] = "裁E��中";
+            item[ITEM_RUNTIME_LOCATION_KEY] = "装備中";
         }
         const hasItem = Boolean(item && item.名前);
 
@@ -698,19 +930,19 @@ async function displayEquipment(equipment, base, increase) {
 
         const row = document.createElement("tr");
 
-        // 属性の合計を計箁E
+        // 属性の合計を計算
         let attributeTotal = 0;
         weponList.forEach(attr => {
-            attributeTotal += parseInt(item[attr]) || 0; // undefined の場合�E 0 として計箁E
+            attributeTotal += parseInt(item[attr]) || 0; // undefined の場合は 0 として計算
         });
         attributeTotal = Math.round(attributeTotal);
 
-        // 攻撁E��、E��御力�E計箁E
-        const attackPower = Math.round((Math.max(item.刁E�� || 0, item.貫送E|| 0, item.打撃 || 0) * (100 + base.攻撁E+ increase.攻撁E / 100));
+        // 攻撃力、防御力の計算
+        const attackPower = Math.round((Math.max(item.切断 || 0, item.貫通 || 0, item.打撃 || 0) * (100 + base.攻撃 + increase.攻撃) / 100));
         const defensePower = Math.round(item.防御倍率 * (base.防御 + increase.防御 + 100) / 100) || 0;
 
-        // 種顁E
-        // 更新チE�Eタとして準備
+        // 種類
+        // 更新データとして準備
         const newData = {
             label: item.名前,
             威力: attackPower,
@@ -719,38 +951,38 @@ async function displayEquipment(equipment, base, increase) {
             総合: item
         };
 
-        // 武器スロチE��に応じて updateAttackOption を使用して更新
+        // 武器スロットに応じて updateAttackOption を使用して更新
         if (slot === "武器" || slot === "武器2") {
             updateAttackOption(slot, newData);
         }
 
-        // 吁E�EにチE�Eタを挿入
+        // 各列にデータを挿入
         const rowData = [
-            slot, // 部位（侁E 武器�E�E
-            { 名前: item.名前 || "不�E", フリガチE item.フリガチE|| "" }, // 名前とフリガナをオブジェクトで管琁E
+            slot, // 部位（例: 武器）
+            { 名前: item.名前 || "不明", フリガナ: item.フリガナ || "" }, // 名前とフリガナをオブジェクトで管理
             attackPower, // 威力
             attributeTotal, // 属性
             defensePower, // 防御
-            item.総合軽渁E|| 0 // 軽渁E
+            item.総合軽減 || 0 // 軽減
         ];
 
         rowData.forEach((data, index) => {
             const td = document.createElement("td");
 
-            // 名前の列（フリガナ付き�E�E
+            // 名前の列（フリガナ付き）
             if (index === 1 && typeof data === "object") {
                 td.innerHTML = `<ruby>${data.名前}<rt>${data.フリガナ}</rt></ruby>`;
                 td.classList.add("item-name-cell");
-                td.title = "クリチE��で詳細を表示";
+                td.title = "クリックで詳細を表示";
                 attachDetailOpenBehavior(td, item, detailItems, "詳細");
             }
-            // 数値チE�Eタは四捨五�E
+            // 数値データは四捨五入
             else if (typeof data === "number") {
                 td.textContent = Math.round(data);
             }
-            // そ�E他�E刁E
+            // その他の列
             else {
-                td.textContent = data || "不�E";
+                td.textContent = data || "不明";
             }
 
             // 行に列を追加
@@ -763,9 +995,9 @@ async function displayEquipment(equipment, base, increase) {
 }
 
 
-// アイチE��チE�Eタをテーブルに挿入する関数
+// アイテムデータをテーブルに挿入する関数
 function displayItemTable(bodyId, equipment, base, increase){
-    // 既存�E行をクリア
+    // 既存の行をクリア
     const setBody = document.getElementById(bodyId);
     setBody.innerHTML = "";
     const detailItems = collectDetailItems(equipment);
@@ -775,52 +1007,52 @@ function displayItemTable(bodyId, equipment, base, increase){
             ? "倉庫"
             : "";
 
-    // 吁E��E��チE�Eタを行として追加
+    // 各装備データを行として追加
     for (const slot in equipment) {
         const item = equipment[slot];
-        if (!item || !item.名前) continue; // チE�Eタが欠けてぁE��場合�EスキチE�E
+        if (!item || !item.名前) continue; // データが欠けている場合はスキップ
         if (runtimeLocationLabel && typeof item === "object") {
             item[ITEM_RUNTIME_LOCATION_KEY] = runtimeLocationLabel;
         }
 
         const row = document.createElement("tr");
-        // 属性の合計を計箁E
+        // 属性の合計を計算
         let attributeTotal = 0;
         weponList.forEach(attr => {
-            attributeTotal += parseInt(item[attr]) || 0; // 吁E��性ぁEundefined の場合�E 0 として計箁E
+            attributeTotal += parseInt(item[attr]) || 0; // 各属性が undefined の場合は 0 として計算
         });
         attributeTotal = Math.round(attributeTotal)
-        // 吁E�EにチE�Eタを挿入
+        // 各列にデータを挿入
         const rowData = [
-            item.種顁E // 部位（侁E 剣、E��具など�E�E
-            { 名前: item.名前 || "不�E", フリガチE item.フリガチE|| "" }, // 名前とフリガナをオブジェクトで管琁E
-            Math.round((Math.max(item.刁E�� || 0, item.貫送E|| 0, item.打撃 || 0) * (100 + base.攻撁E+ increase.攻撁E / 100)), // 威力
-            attributeTotal, // 属性合訁E
+            item.種類, // 部位（例: 剣、防具など）
+            { 名前: item.名前 || "不明", フリガナ: item.フリガナ || "" }, // 名前とフリガナをオブジェクトで管理
+            Math.round((Math.max(item.切断 || 0, item.貫通 || 0, item.打撃 || 0) * (100 + base.攻撃 + increase.攻撃) / 100)), // 威力
+            attributeTotal, // 属性合計
             Math.round(item.防御倍率 * (base.防御 + increase.防御 + 100) / 100) || 0, // 防御
-            item.総合軽渁E|| 0 // 軽渁E
+            item.総合軽減 || 0 // 軽減
         ];
 
-        // チE�Eブルの行データを�E琁E
+        // テーブルの行データを処理
         rowData.forEach((data, index) => {
             const td = document.createElement("td");
 
-            // 名前の列（ルビ付き�E�E
+            // 名前の列（ルビ付き）
             if (index === 1 && typeof data === "object") {
                 td.innerHTML = `<ruby>${data.名前}<rt>${data.フリガナ}</rt></ruby>`;
                 td.classList.add("item-name-cell");
-                td.title = "クリチE��で詳細を表示";
+                td.title = "クリックで詳細を表示";
                 attachDetailOpenBehavior(td, item, detailItems, "詳細");
             }
-            // 数値チE�Eタは四捨五�E
+            // 数値データは四捨五入
             else if (typeof data === "number") {
                 td.textContent = Math.round(data);
             }
-            // そ�E他�E刁E
+            // その他の列
             else {
-                td.textContent = data || "不�E";
+                td.textContent = data || "不明";
             }
 
-            // チE�Eブルの行に列を追加
+            // テーブルの行に列を追加
             row.appendChild(td);
         });
 
@@ -841,20 +1073,20 @@ function displayStorage(storage) {
     });
 }
 
-// タブ操佁E=============
+// タブ操作 =============
 function openTab(tabId, element) {
-    // メインタブメニュー冁E�Eみを対象とする
+    // メインタブメニュー内のみを対象とする
     const mainTabContainer = document.querySelector('#tab-container'); // メインタブメニュー全体を囲む要素
 
-    // メインタブメニュー冁E�EコンチE��チE��示を�Eり替ぁE
+    // メインタブメニュー内のコンテンツ表示を切り替え
     mainTabContainer.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.getElementById(tabId).classList.add('active');
 
-    // メインタブメニュー冁E�EボタンのアクチE��ブ状態を刁E��替ぁE
+    // メインタブメニュー内のボタンのアクティブ状態を切り替え
     mainTabContainer.querySelectorAll('.main-tabs .tab-button').forEach(button => button.classList.remove('active'));
     element.classList.add('active');
 
-    // アイチE��タブを開いたときに副タブ�E表示を保証
+    // アイテムタブを開いたときに副タブの表示を保証
     if (tabId === 'items') {
         const hasActiveSecondaryContent = Boolean(mainTabContainer.querySelector('.secondary-tab-content.active'));
         if (!hasActiveSecondaryContent) {
@@ -865,15 +1097,15 @@ function openTab(tabId, element) {
 
 
 function showSecondaryTab(tabId, element) {
-    // すべてのセカンダリタブコンチE��チE��非表示に
+    // すべてのセカンダリタブコンテンツを非表示に
     const secondaryTabs = document.querySelectorAll(".secondary-tab-content");
     secondaryTabs.forEach(tab => tab.classList.remove("active"));
 
-    // 持E��されたタブ�Eみを表示
+    // 指定されたタブのみを表示
     const activeTab = document.getElementById(tabId);
     if (activeTab) activeTab.classList.add("active");
 
-    // セカンダリタブ�EタンのアクチE��ブ状態を刁E��替ぁE
+    // セカンダリタブボタンのアクティブ状態を切り替え
     const secondaryButtons = document.querySelectorAll(".secondary-tabs .tab-button");
     secondaryButtons.forEach(button => button.classList.remove("active"));
 
@@ -890,18 +1122,18 @@ function showSecondaryTab(tabId, element) {
 
 let selectedInventoryItem = null;
 
-// アイチE��を選択して移動�Eを表示する
+// アイテムを選択して移動先を表示する
 function selectItem(item) {
     selectedInventoryItem = item;
     document.getElementById("move-buttons").style.display = "flex";
 }
 
-// アイチE��を各タブ間で移動すめE
+// アイテムを各タブ間で移動する
 function moveItem(destination) {
     if (!selectedInventoryItem) return;
 
     switch (destination) {
-        case '裁E��':
+        case '装備':
             selectEquipmentSlot(selectedInventoryItem);
             break;
         case '持ち物':
@@ -917,9 +1149,9 @@ function moveItem(destination) {
     updateDisplays();
 }
 
-// 裁E��スロチE��を選抁E
+// 装備スロットを選択
 function selectEquipmentSlot(item) {
-    const slotOptions = ['頭', '佁E, '腁E, '足']; // 部位を設宁E
+    const slotOptions = ['頭', '体', '腕', '足']; // 部位を設定
     const slotSelect = document.createElement('select');
     slotOptions.forEach(slot => {
         const option = document.createElement('option');
@@ -929,14 +1161,14 @@ function selectEquipmentSlot(item) {
     });
 
     const confirmButton = document.createElement('button');
-    confirmButton.textContent = '裁E��する';
+    confirmButton.textContent = '装備する';
     confirmButton.onclick = () => {
         const selectedSlot = slotSelect.value;
         if (equipment[selectedSlot]) {
-            if (!confirm("既に裁E��されてぁE��す。交換しますか�E�E)) return;
-            inventory.push(equipment[selectedSlot]); // 古ぁE��E��を持ち物に移勁E
+            if (!confirm("既に装備されています。交換しますか？")) return;
+            inventory.push(equipment[selectedSlot]); // 古い装備を持ち物に移動
         }
-        equipment[selectedSlot] = item; // 新しい裁E��を設宁E
+        equipment[selectedSlot] = item; // 新しい装備を設定
         updateDisplays();
     };
 
@@ -948,7 +1180,7 @@ const displayKeys = [
     { label: "HP", accessor: "HP" },
     { label: "MP", accessor: "MP" },
     { label: "ST", accessor: "ST" },
-    { label: "攻撁E, accessor: "攻撁E },
+    { label: "攻撃", accessor: "攻撃" },
     { label: "防御", accessor: "防御" },
     { label: "魔力", accessor: "魔力" },
     { label: "速度", accessor: "速度" },
@@ -958,27 +1190,133 @@ const displayKeys = [
     { label: "合計値", accessor: "合計値" }
 ];
 
-// チE�Eブルを�E期化し、データを埋める関数
+const LEVEL_TABLE_STATUS_KEYS = [
+    { label: "HP", accessor: "HP" },
+    { label: "MP", accessor: "MP" },
+    { label: "ST", accessor: "ST" },
+    { label: "攻撃", accessor: "攻撃" },
+    { label: "防御", accessor: "防御" },
+    { label: "魔力", accessor: "魔力" },
+    { label: "魔防", accessor: "魔防" },
+    { label: "速度", accessor: "速度" },
+    { label: "命中", accessor: "命中" },
+    { label: "APP", accessor: "APP" },
+    { label: "SIZ", accessor: "SIZ" }
+];
+
+const levelsTableState = {
+    view: "status",
+    rows: []
+};
+
+function buildLevelTableKeysFromNameList(nameList = []) {
+    return (Array.isArray(nameList) ? nameList : [])
+        .map((name) => String(name || "").trim())
+        .filter(Boolean)
+        .map((name) => ({ label: name, accessor: name }));
+}
+
+function getLevelSkillColumns(rows = []) {
+    const numbers = new Set();
+    (Array.isArray(rows) ? rows : []).forEach((entry) => {
+        const stats = entry?.stats && typeof entry.stats === "object" ? entry.stats : {};
+        Object.keys(stats).forEach((key) => {
+            const match = String(key).trim().match(/^Lv\s*(\d+)$/i);
+            if (!match) return;
+            const value = String(stats[key] ?? "").trim();
+            if (!value || value === "0") return;
+            numbers.add(Number(match[1]));
+        });
+    });
+
+    if (numbers.size === 0) {
+        const maxLevel = Math.max(
+            0,
+            ...(Array.isArray(rows) ? rows : []).map((entry) => (
+                Number(entry?.Lv || 0) + Number(entry?.Ef || 0)
+            ))
+        );
+        const fallbackCount = Math.min(Math.max(0, Math.round(maxLevel)), 60);
+        for (let i = 1; i <= fallbackCount; i += 1) {
+            numbers.add(i);
+        }
+    }
+
+    return [...numbers]
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .sort((a, b) => a - b)
+        .map((num) => ({ label: `Lv${num}`, accessor: `Lv${num}` }));
+}
+
+function resolveLevelTableKeys(view = "status", rows = []) {
+    const resistanceNames = (typeof resistances !== "undefined" && Array.isArray(resistances)) ? resistances : [];
+    const bodyNames = (typeof displayBody !== "undefined" && Array.isArray(displayBody))
+        ? displayBody
+        : ((typeof bodyAttributes !== "undefined" && Array.isArray(bodyAttributes)) ? bodyAttributes : []);
+    const talentNames = (typeof talents !== "undefined" && Array.isArray(talents)) ? talents : [];
+
+    if (view === "resistance") {
+        return buildLevelTableKeysFromNameList(resistanceNames);
+    }
+    if (view === "body") {
+        return buildLevelTableKeysFromNameList(bodyNames);
+    }
+    if (view === "talent") {
+        return buildLevelTableKeysFromNameList(talentNames);
+    }
+    if (view === "skill") {
+        return getLevelSkillColumns(rows);
+    }
+    return LEVEL_TABLE_STATUS_KEYS;
+}
+
+function updateLevelsViewTabActive(view = "status") {
+    const buttons = document.querySelectorAll("#levels-view-tabs .levels-view-tab");
+    buttons.forEach((button) => {
+        const id = String(button?.dataset?.levelsView || "").trim();
+        button.classList.toggle("active", id === view);
+    });
+}
+
+async function renderLevelsTableByState() {
+    const rows = Array.isArray(levelsTableState.rows) ? levelsTableState.rows : [];
+    const keys = resolveLevelTableKeys(levelsTableState.view, rows);
+    updateLevelsViewTabActive(levelsTableState.view);
+    await populateLevelsTable(rows, keys);
+}
+
+async function changeLevelsTableView(view = "status", trigger = null) {
+    const nextView = String(view || "").trim() || "status";
+    levelsTableState.view = nextView;
+    if (trigger && trigger.dataset) {
+        trigger.dataset.levelsView = nextView;
+    }
+    await renderLevelsTableByState();
+}
+
+// テーブルを初期化し、データを埋める関数
 async function populateLevelsTable(data, keys = displayKeys) {
     const table = document.querySelector("#levels-table");
+    if (!table) return;
     const tableBody = table.querySelector("tbody");
     const tableHead = table.querySelector("thead");
+    if (!tableBody || !tableHead) return;
 
-    // チE�Eブルの初期匁E
+    // テーブルの初期化
     tableBody.innerHTML = "";
     tableHead.innerHTML = "";
 
-    // 固定�EチE��ー�E�Ev, Ef, 職業名！E
+    // 固定ヘッダー（Lv, Ef, 職業名）
     const fixedHeaders = [
-        { label: "職業吁E, className: "profession-column profession-column-sticky" },
+        { label: "職業名", className: "profession-column profession-column-sticky" },
         { label: "Lv", className: "small-column lv-column" },
         { label: "Ef", className: "small-column ef-column" }
     ];
 
-    // ヘッダー行を作�E
+    // ヘッダー行を作成
     const headerRow = document.createElement("tr");
 
-    // 固定�EチE��ーの列を追加
+    // 固定ヘッダーの列を追加
     fixedHeaders.forEach((header) => {
         const th = document.createElement("th");
         th.textContent = header.label;
@@ -987,33 +1325,34 @@ async function populateLevelsTable(data, keys = displayKeys) {
         headerRow.appendChild(th);
     });
 
-    // そ�E他�E可変�EチE��ーを追加
+    // その他の可変ヘッダーを追加
     keys.forEach(key => {
         const th = document.createElement("th");
-        th.textContent = key.label; // 表示ラベルを設宁E
-        th.classList.add("small-column"); // 数値列�E5%幁E
+        th.textContent = key.label; // 表示ラベルを設定
+        th.classList.add("small-column"); // 数値列は5%幅
         headerRow.appendChild(th);
     });
 
     tableHead.appendChild(headerRow);
 
-    // Lv降頁E��Lvが同じ場合�EEf降頁E��ソーチE
-    const sortedData = data.sort((a, b) => {
+    // Lv降順、Lvが同じ場合はEf降順でソート
+    const sourceRows = Array.isArray(data) ? [...data] : [];
+    const sortedData = sourceRows.sort((a, b) => {
         if (b.Lv === a.Lv) {
-            return b.Ef - a.Ef; // Ef降頁E
+            return b.Ef - a.Ef; // Ef降順
         }
-        return b.Lv - a.Lv; // Lv降頁E
+        return b.Lv - a.Lv; // Lv降順
     });
 
-    // チE�Eタ行を作�E
+    // データ行を作成
     sortedData.forEach(character => {
-        const stats = character.stats;
+        const stats = (character && typeof character.stats === "object") ? character.stats : {};
         const row = document.createElement("tr");
 
-        // 職業名（ルビ付き�E�を先頭に追加
+        // 職業名（ルビ付き）を先頭に追加
         const professionTd = document.createElement("td");
         professionTd.classList.add("profession-column", "profession-column-sticky");
-        professionTd.textContent = stats["職業吁E] || "";
+        professionTd.textContent = stats["職業名"] || "";
         row.appendChild(professionTd);
 
         // 固定データ (Lv, Ef) を追加
@@ -1029,11 +1368,11 @@ async function populateLevelsTable(data, keys = displayKeys) {
             row.appendChild(td);
         });
 
-        // そ�E他�EチE�Eタを追加
+        // その他のデータを追加
         keys.forEach(key => {
             const td = document.createElement("td");
-            td.textContent = stats[key.accessor] || ""; // stats から取征E
-            td.classList.add("small-column"); // 5%幁E
+            td.textContent = stats[key.accessor] || ""; // stats から取得
+            td.classList.add("small-column"); // 5%幅
             row.appendChild(td);
         });
 
@@ -1041,9 +1380,9 @@ async function populateLevelsTable(data, keys = displayKeys) {
     });
 }
 
-// スクロールバ�E幁E��計算してCSS変数に適用する関数
+// スクロールバー幅を計算してCSS変数に適用する関数
 function setScrollbarWidth() {
-    // スクロールバ�E幁E��測宁E
+    // スクロールバー幅を測定
     const scrollDiv = document.createElement("div");
     scrollDiv.style.visibility = "hidden";
     scrollDiv.style.overflow = "scroll";
@@ -1054,7 +1393,7 @@ function setScrollbarWidth() {
     const scrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
     document.body.removeChild(scrollDiv);
 
-    // CSS変数にスクロールバ�E幁E��適用
+    // CSS変数にスクロールバー幅を適用
     document.documentElement.style.setProperty("--scrollbar-width", `${scrollbarWidth}px`);
 }
 
@@ -1064,7 +1403,7 @@ window.displayItemTable = displayItemTable;
 window.statsView = statsView;
 window.openTab = openTab;
 window.showSecondaryTab = showSecondaryTab;
-
+window.changeLevelsTableView = changeLevelsTableView;
 
 
 

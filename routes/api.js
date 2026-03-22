@@ -6,14 +6,24 @@ const XLSX = require('xlsx');
 
 const filePath = './data.xlsx';
 const excelAbsolutePath = path.resolve(filePath);
-const selectDataLogPath = path.join(process.cwd(), 'logs', 'select_dataLog.txt');
-const battleMemoJsonPath = path.join(process.cwd(), 'logs', 'battle-memo.json');
-const characterProfileJsonPath = path.join(process.cwd(), 'logs', 'character-profiles.json');
-const skillSetPresetJsonPath = path.join(process.cwd(), 'logs', 'skill-set-presets.json');
+const appDataRoot = path.resolve(
+    process.env.APP_DATA_DIR
+    || process.env.DATA_DIR
+    || process.cwd()
+);
+const logsDirPath = path.join(appDataRoot, 'logs');
+const selectDataLogPath = path.join(logsDirPath, 'select_dataLog.txt');
+const battleMemoJsonPath = path.join(logsDirPath, 'battle-memo.json');
+const characterProfileJsonPath = path.join(logsDirPath, 'character-profiles.json');
+const skillSetPresetJsonPath = path.join(logsDirPath, 'skill-set-presets.json');
 const skillSetIconDirName = '攻撃手段';
 const skillSetIconDirPath = path.join(process.cwd(), 'public', 'images', skillSetIconDirName);
 const MEMO_PROFILE_TAB_ID = '__profile__';
 const MEMO_PROFILE_TAB_TITLE = 'プロフィール';
+
+fs.mkdirSync(logsDirPath, { recursive: true });
+console.log(`[storage] appDataRoot=${appDataRoot}`);
+console.log(`[storage] logsDir=${logsDirPath}`);
 
 const SHEET_NAMES = {
     user: ['userID'],
