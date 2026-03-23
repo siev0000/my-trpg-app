@@ -207,8 +207,9 @@ async function displayBasicStatus(selectedCharacter) {
     window.DebaglogSet?.("肉体部位の威力設定　:", calculatedPowers);
     await updateAllAttackOptions()
 
-    const result = { ...baseValues, ...baseSkills }; // baseValues をコピー
-    const increase = { ...increaseValues, ...increaseSkills }
+    const result = { ...baseValues, ...baseSkills, ...baseBodys }; // baseValues をコピー
+    const increase = { ...increaseValues, ...increaseSkills, ...increaseBodys }
+    console.log("合計結果の計算前:", { result, increase });
     for (const key in increase) {
       result[key] = (result[key] || 0) + increase[key];
     }

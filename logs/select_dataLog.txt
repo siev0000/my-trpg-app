@@ -314,3 +314,47 @@ requestId	log-mn1xbdol-uh3ko1
 
 7
 
+timestamp	2026-03-23T09:41:52.089Z
+requestId	log-mn2zy2c9-av2mbh
+キリョク=ラセツ
+武器
+0
+握りつぶす
+
+57
+
+timestamp	2026-03-23T09:42:30.928Z
+requestId	log-mn2zywb4-yz3wb0
+キリョク=ラセツ
+武器
+0
+握りつぶす
+
+49
+
+timestamp	2026-03-23T09:43:37.698Z
+requestId	log-mn300btu-kzyou7
+クルーツェル
+武器
+0
+獄炎を喰らう絶滅の槍
+
+56
+
+timestamp	2026-03-23T09:43:59.164Z
+requestId	log-mn300se4-otg9yg
+クルーツェル
+武器
+0
+
+98
+
+timestamp	2026-03-23T09:47:18.067Z
+requestId	log-mn3051v7-baby5k
+クルーツェル
+武器
+0
+炎の吐息
+
+39
+

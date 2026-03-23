@@ -3494,6 +3494,19 @@ function getMultiplierKeyByStatKey(statKey) {
     return `${key}倍`;
 }
 
+function sumMetricBreakdownWithGlobalRates(baseMap = {}, globalFinalRates = null) {
+    const source = (baseMap && typeof baseMap === "object") ? baseMap : {};
+    let total = 0;
+    Object.entries(source).forEach(([statKey, rawValue]) => {
+        const key = String(statKey || "").trim();
+        if (!key) return;
+        const multiplierKey = getMultiplierKeyByStatKey(key);
+        const rate = Math.max(0, toFiniteNumber(globalFinalRates?.[multiplierKey]) || 1);
+        total += toFiniteNumber(rawValue) * rate;
+    });
+    return total;
+}
+
 function buildSelectedSkillsGlobalFinalRates(options = {}) {
     const sums = {};
 
@@ -3812,14 +3825,24 @@ function calculateBattleSkillDisplayData(slot, skillInput, options = {}) {
         const overrideAttributeBase = toFiniteNumber(aSlotOverride.属性);
         powerBeforeMultiplier = overridePowerBase;
         const overrideFinalMultiplier = fullPowerMultiplier * allPowerMultiplier;
-        displayPower = toDisplayNumber(overridePowerBase, overrideFinalMultiplier);
+        const overridePowerWithRates = Math.max(
+            0,
+            sumMetricBreakdownWithGlobalRates(overrideMetricBreakdown?.power, options?.globalFinalRates)
+        );
+        const overrideAttributeWithRates = Math.max(
+            0,
+            sumMetricBreakdownWithGlobalRates(overrideMetricBreakdown?.attribute, options?.globalFinalRates)
+        );
+        const resolvedOverridePowerBase = overridePowerWithRates > 0 ? overridePowerWithRates : overridePowerBase;
+        const resolvedOverrideAttributeBase = overrideAttributeWithRates > 0 ? overrideAttributeWithRates : overrideAttributeBase;
+        displayPower = toDisplayNumber(resolvedOverridePowerBase, overrideFinalMultiplier);
         displayGuard = toDisplayNumber(overrideGuardBase, overrideFinalMultiplier);
         displayState = toDisplayNumber(overrideStateBase, overrideFinalMultiplier);
-        displayAttribute = toDisplayNumber(overrideAttributeBase, overrideFinalMultiplier);
+        displayAttribute = toDisplayNumber(resolvedOverrideAttributeBase, overrideFinalMultiplier);
         if (!displayAttribute) {
             displayAttribute = toDisplayText(aSlotOverride.属性);
         }
-        powerValue = toScaledNumber(overridePowerBase, overrideFinalMultiplier);
+        powerValue = toScaledNumber(resolvedOverridePowerBase, overrideFinalMultiplier);
         guardValue = toScaledNumber(overrideGuardBase, overrideFinalMultiplier);
         stateValue = toScaledNumber(overrideStateBase, overrideFinalMultiplier);
     }
@@ -3874,15 +3897,19 @@ function resolveUnifiedGuardValue({
         && typeof preview.overrideMetricBreakdown === "object"
     );
     const guardSourceSkill = preview?.adjustedSkillData || sourceSkill || fallbackSkillData || {};
+    const normalAttackGuardSkill = guardSourceSkill || sourceSkill || fallbackSkillData || {};
+    const shouldApplyAttackMethodGuard = isASlotNormalAttackBySkill(normalAttackGuardSkill ? slot : "", normalAttackGuardSkill);
     const physicalGuardBase = toFiniteNumber(guardSourceSkill?.物理ガード);
     const magicGuardRaw = toFiniteNumber(guardSourceSkill?.魔法ガード);
     const hasGuardByType = physicalGuardBase > 0 || magicGuardRaw > 0;
     const isSQSlot = normalizedSlot === "S" || normalizedSlot === "Q1" || normalizedSlot === "Q2";
-    const attackMethodGuardValue = toFiniteNumber(getAttackOptionValueByAliases(
-        getSelectedAttackOptionData(),
-        ["防御性能", "防御倍率", "防御性能倍率", "守り", "防御", "guard"],
-        0
-    ));
+    const attackMethodGuardValue = shouldApplyAttackMethodGuard
+        ? toFiniteNumber(getAttackOptionValueByAliases(
+            getSelectedAttackOptionData(),
+            ["防御性能", "防御倍率", "防御性能倍率", "守り", "防御", "guard"],
+            0
+        ))
+        : 0;
     const magicGuardApplied = (isSQSlot && magicGuardRaw >= 1) ? magicGuardRaw : 0;
 
     let rowGuardValue = toFiniteNumber(displayGuardValue);
@@ -4669,22 +4696,27 @@ function resolveASlotNormalAttackOverride(slot, skillData, options = {}) {
 
     let overridePower = 0;
     let overrideGuard = 0;
+    let powerBreakdown = {};
 
     switch (actionKey) {
         case "切断":
             overridePower = applyAttackRate(methodCut);
+            powerBreakdown = { 切断: overridePower };
             break;
         case "貫通":
             overridePower = applyAttackRate(methodPierce);
+            powerBreakdown = { 貫通: overridePower };
             break;
         case "打撃":
             overridePower = applyAttackRate(methodBlunt);
+            powerBreakdown = { 打撃: overridePower };
             break;
         case "射撃":
         case "狙撃":
             overridePower = canUseRanged
                 ? applyAttackRate(methodPierce)
                 : 0;
+            powerBreakdown = overridePower > 0 ? { 貫通: overridePower } : {};
             break;
         case "防御":
             overrideGuard = applyDefenseRate(methodGuardPerf) * defensePerformanceMultiplier;
@@ -4692,11 +4724,13 @@ function resolveASlotNormalAttackOverride(slot, skillData, options = {}) {
         case "攻勢盾":
             overrideGuard = applyDefenseRate(methodGuardPerf) * defensePerformanceMultiplier;
             overridePower = applyDefenseRate(methodBlunt);
+            powerBreakdown = overridePower > 0 ? { 打撃: overridePower } : {};
             break;
         default:
             // 「通常攻撃」属性のA枠は従来通り攻撃手段の威力/守りを使う。
             overridePower = toFiniteNumber(attackOption?.威力) + bodyPassiveBonus;
             overrideGuard = toFiniteNumber(attackOption?.守り ?? attackOption?.防御) + bodyPassiveBonus;
+            powerBreakdown = overridePower > 0 ? { 威力: overridePower } : {};
             break;
     }
 
@@ -4707,11 +4741,7 @@ function resolveASlotNormalAttackOverride(slot, skillData, options = {}) {
         // 属性は攻撃手段の値をそのまま使う（判定/追加威力倍率は掛けない）
         属性: methodAttribute,
         __metricBreakdown: {
-            power: {
-                切断: scaledMethodCut,
-                貫通: scaledMethodPierce,
-                打撃: scaledMethodBlunt
-            },
+            power: powerBreakdown,
             guard: {
                 防御性能: overrideGuard
             },
@@ -6192,18 +6222,6 @@ function buildSkillSetModalRows() {
             displayState: displayStateValue,
             displayAttribute: preview?.displayAttribute
         });
-        const applyGlobalRatesToBreakdownMap = (map = {}) => {
-            const source = map && typeof map === "object" ? map : {};
-            let total = 0;
-            Object.entries(source).forEach(([statKey, rawValue]) => {
-                const key = String(statKey || "").trim();
-                if (!key) return;
-                const multiplierKey = getMultiplierKeyByStatKey(key);
-                const rate = Math.max(0, toFiniteNumber(globalFinalRates?.[multiplierKey]) || 1);
-                total += toFiniteNumber(rawValue) * rate;
-            });
-            return total;
-        };
         let rowPowerValue = toFiniteNumber(displayPowerValue);
         const rowAttributeValue = toFiniteNumber(preview?.displayAttribute);
         let groupedPowerValue = rowPowerValue;
@@ -6270,7 +6288,10 @@ function buildSkillSetModalRows() {
             return Math.max(0, toFiniteNumber(globalFinalRates?.[multiplierKey]) || 1);
         };
         const scaledBreakdownMultiplier = hasOverrideBreakdown
-            ? 1
+            ? Math.max(
+                0,
+                toFiniteNumber(preview?.fullPowerMultiplier) * toFiniteNumber(preview?.allPowerMultiplier)
+            ) || 1
             : Math.max(0, toFiniteNumber(preview?.effectiveMultiplier) || 1);
         const scaledPowerBreakdownMap = buildScaledBreakdownMap(metricBreakdown.powerMap, {
             multiplier: scaledBreakdownMultiplier,
@@ -9365,36 +9386,19 @@ async function sendData(diceCount, diceMax) {
 
 
 function getSkillsFromTable() {
-    DebaglogSet("  getSkillsFromTable :")
-    const selectedSkillsTable = document.getElementById('selected-skills');
-    const skills = [];
-    const rows = selectedSkillsTable.getElementsByTagName('tr');
-
-    for (let i = 0; i < rows.length; i++) {
-        const cells = rows[i].getElementsByTagName('td');
-
-        // ruby 要素を取得
-        const rubyElement = cells[1].querySelector('ruby');
-        DebaglogSet(rubyElement)
-
-        let mainText = '';
-        if (rubyElement) {
-            mainText = rubyElement.childNodes[0].textContent.trim();
-        }
-        
-        const skillName = mainText === "未選択" ? "" : mainText;
-        
-        DebaglogSet(cells)
-        // テーブル内にスキルの各属性（例：名前、威力、属性）が順番に並んでいる場合
-        const skill = {
-            slot: cells[0]?.textContent.trim(),          // スキルスロット
-            name: skillName,          // スキル名
+    DebaglogSet("  getSkillsFromTable :");
+    const skills = SELECTED_SKILL_SLOT_ORDER.map((slot) => {
+        const skillData = getSkillData(selectedSkills?.[slot]);
+        const skillName = skillData
+            ? String(skillData?.和名 || skillData?.技名 || skillData?.name || "").trim()
+            : "";
+        return {
+            slot: String(slot || "").trim(),
+            name: skillName
         };
+    });
 
-        skills.push(skill); // 取得したスキルを配列に追加
-    }
-
-    DebaglogSet(skills)
+    DebaglogSet(skills);
 
     return skills;
 }
