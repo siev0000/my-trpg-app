@@ -588,13 +588,15 @@
   display: block;
   margin-top: 5px;
   margin-left: 10px;
+  position: relative;
+  z-index: 0;
 }
 
 .skill-table:not(.is-type2) .skill-passive-open-btn {
   position: absolute;
   top: 0px;
   left: 0px;
-  z-index: 1;
+  z-index: 3;
   min-width: 34px;
   height: 15px;
   border: 1px solid #9a6a10;
@@ -616,13 +618,15 @@
 .skill-table.is-type2 .skill-description-text {
   display: block;
   margin: 4px 0 0 25px;
+  position: relative;
+  z-index: 0;
 }
 
 .skill-table.is-type2 .skill-passive-open-btn {
   position: absolute;
   top: -4px;
   left: -6px;
-  z-index: 1;
+  z-index: 3;
   min-width: 26px;
   height: 16px;
   font-size: 12px;
@@ -633,6 +637,43 @@
 
 .skill-table .skill-passive-open-btn:hover {
   background: #ffe6b0;
+}
+
+.skill-table .skill-description-cell-cooldown-overlay {
+  position: relative;
+}
+
+.skill-table .skill-description-cell-cooldown-overlay .skill-description-text-cooldown-faded {
+  color: rgba(36, 49, 63, 0.28);
+}
+
+/* 選択/発動中ハイライトの色上書きより優先して半透明を維持する */
+.skill-table tbody tr .skill-description-cell-cooldown-overlay .skill-description-text-cooldown-faded {
+  color: rgba(36, 49, 63, 0.28) !important;
+}
+
+.skill-table .skill-description-cell-cooldown-overlay .skill-cooldown-overlay-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 1.3em;
+  font-weight: 900;
+  line-height: 1;
+  color: #1d4ed8;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.95);
+  letter-spacing: 0.02em;
+  z-index: 2;
+}
+
+.skill-table tbody tr.skill-cooldown-active .skill-description-cell-cooldown-overlay .skill-cooldown-overlay-text,
+.skill-table tbody tr.skill-selected-set .skill-description-cell-cooldown-overlay .skill-cooldown-overlay-text,
+.skill-table tbody tr.skill-selected-focus .skill-description-cell-cooldown-overlay .skill-cooldown-overlay-text,
+.skill-table tbody tr.skill-retained-active .skill-description-cell-cooldown-overlay .skill-cooldown-overlay-text {
+  color: #1d4ed8 !important;
+  font-weight: 900;
 }
 
 .skill-tab-panel {

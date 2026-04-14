@@ -200,10 +200,12 @@ function addItemToInventory(item) {
     }
 }
 
-startUp().catch((error) => {
-    console.error("startUp error:", error);
-    const message = (error && error.message) ? error.message : "キャラクターデータの読み込みに失敗しました。";
-    alert(message);
+queueMicrotask(() => {
+    startUp().catch((error) => {
+        console.error("startUp error:", error);
+        const message = (error && error.message) ? error.message : "キャラクターデータの読み込みに失敗しました。";
+        alert(message);
+    });
 });
 
 const addSkill = [
@@ -747,27 +749,177 @@ async function chooseEquipTargetSlot(character, movingItem, allowedSlots) {
     return slots[0];
 }
 
+const HUMAN_TRANSFORM_SKILL_NAME_SET = new Set(["人間変身"]);
+const HUMAN_TRANSFORM_PASSIVE_ONLY_BONUS_KEYS = new Set(["牙", "爪"]);
+const HUMAN_TRANSFORM_FIXED_ZERO_BODY_ATTRIBUTE_KEYS = [
+    "牙",
+    "爪",
+    "羽",
+    "尾",
+    "外郭",
+    "外殻",
+    "外郭装甲",
+    "外殻装甲"
+];
+const HUMAN_TRANSFORM_FIXED_ZERO_BONUS_KEYS = new Set([
+    ...HUMAN_TRANSFORM_FIXED_ZERO_BODY_ATTRIBUTE_KEYS,
+    "SIZ",
+    "足"
+]);
+
+function isHumanTransformSkillData(skillData) {
+    if (!skillData || typeof skillData !== "object") return false;
+    const candidates = [
+        normalizeBattleText(skillData?.和名),
+        normalizeBattleText(skillData?.技名),
+        normalizeBattleText(skillData?.name)
+    ].filter(Boolean);
+    return candidates.some((name) => {
+        for (const keyword of HUMAN_TRANSFORM_SKILL_NAME_SET) {
+            if (name === keyword || name.includes(keyword)) return true;
+        }
+        return false;
+    });
+}
+
+function isHumanTransformSkillActive(activeSkills = []) {
+    const list = Array.isArray(activeSkills) ? activeSkills : [];
+    return list.some((skill) => isHumanTransformSkillData(skill));
+}
+
+function applyHumanTransformStatusBaseRules(source = {}, passiveOnlyConditionalBonuses = {}) {
+    const sourceObject = (source && typeof source === "object") ? source : {};
+    const sourceStats = (sourceObject?.stats && typeof sourceObject.stats === "object")
+        ? sourceObject.stats
+        : {};
+    const sourceItemBonuses = (sourceObject?.itemBonuses && typeof sourceObject.itemBonuses === "object")
+        ? sourceObject.itemBonuses
+        : {};
+    const sourceSkillBonuses = {
+        ...(sourceObject?.skillBonuses && typeof sourceObject.skillBonuses === "object"
+            ? sourceObject.skillBonuses
+            : {})
+    };
+
+    const nextBaseStats = {
+        ...(sourceStats?.baseStats && typeof sourceStats.baseStats === "object" ? sourceStats.baseStats : {})
+    };
+    const nextLevelStats = {
+        ...(sourceStats?.levelStats && typeof sourceStats.levelStats === "object" ? sourceStats.levelStats : {})
+    };
+    const nextBodyAttributes = {
+        ...(sourceStats?.bodyAttributes && typeof sourceStats.bodyAttributes === "object" ? sourceStats.bodyAttributes : {})
+    };
+    const nextBodyType = Array.isArray(sourceStats?.bodyType)
+        ? sourceStats.bodyType.map((entry, index) => (
+            index === 0 && entry && typeof entry === "object" ? { ...entry } : entry
+        ))
+        : [];
+    if (!nextBodyType[0] || typeof nextBodyType[0] !== "object") {
+        nextBodyType[0] = {};
+    }
+    const nextBodyTypePrimary = nextBodyType[0];
+
+    const nextItemBonusStats = {
+        ...(sourceItemBonuses?.stats && typeof sourceItemBonuses.stats === "object"
+            ? sourceItemBonuses.stats
+            : {})
+    };
+    const nextSkillBonuses = { ...sourceSkillBonuses };
+
+    HUMAN_TRANSFORM_FIXED_ZERO_BODY_ATTRIBUTE_KEYS.forEach((key) => {
+        nextBodyAttributes[key] = 0;
+        nextItemBonusStats[key] = 0;
+        nextSkillBonuses[key] = 0;
+        nextBodyTypePrimary[key] = 0;
+    });
+
+    nextBaseStats.SIZ = 170;
+    nextLevelStats.SIZ = 0;
+    nextBodyAttributes.SIZ = 170;
+    nextItemBonusStats["SIZ"] = 0;
+    nextItemBonusStats["SIZ+"] = 0;
+    nextSkillBonuses.SIZ = 0;
+    nextBodyTypePrimary.SIZ = 0;
+
+    nextBodyAttributes["足"] = 2;
+    nextItemBonusStats["足"] = 0;
+    nextSkillBonuses["足"] = 0;
+    nextBodyTypePrimary["足"] = 0;
+
+    HUMAN_TRANSFORM_PASSIVE_ONLY_BONUS_KEYS.forEach((key) => {
+        nextBodyAttributes[key] = 0;
+        nextItemBonusStats[key] = 0;
+        nextBodyTypePrimary[key] = 0;
+        nextSkillBonuses[key] = (
+            toFiniteNumber(sourceSkillBonuses[key])
+            + toFiniteNumber(passiveOnlyConditionalBonuses?.[key])
+        );
+    });
+
+    return {
+        ...sourceObject,
+        stats: {
+            ...sourceStats,
+            baseStats: nextBaseStats,
+            levelStats: nextLevelStats,
+            bodyAttributes: nextBodyAttributes,
+            bodyType: nextBodyType
+        },
+        itemBonuses: {
+            ...sourceItemBonuses,
+            stats: nextItemBonusStats
+        },
+        skillBonuses: nextSkillBonuses
+    };
+}
+
 function buildCharacterDataForStatusDisplay(characterDataSource = playerData) {
     const source = (characterDataSource && typeof characterDataSource === "object")
         ? characterDataSource
         : {};
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const characterName = source?.name || selectName || playerData?.name || "";
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName
+    });
+    const passiveOnlyConditionalBonuses = buildConditionalPassiveStatusBonuses(
+        getActiveConditionalPassivesForSelectedSkills(selectedSkills)
+    );
+    const humanTransformActive = isHumanTransformSkillActive(activeConditionalPassives);
+    const normalizedSource = humanTransformActive
+        ? applyHumanTransformStatusBaseRules(source, passiveOnlyConditionalBonuses)
+        : source;
     const conditionalBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
-        characterName: source?.name || selectName || playerData?.name || ""
+        characterName
     });
     const mergedSkillBonuses = {
-        ...(source.skillBonuses || {})
+        ...(normalizedSource.skillBonuses || {})
     };
 
     Object.entries(conditionalBonuses).forEach(([key, value]) => {
+        if (humanTransformActive) {
+            const normalizedKey = normalizeConditionalPassiveGlobalBoostKey(key) || String(key || "").trim();
+            if (HUMAN_TRANSFORM_PASSIVE_ONLY_BONUS_KEYS.has(normalizedKey)) return;
+            if (HUMAN_TRANSFORM_FIXED_ZERO_BONUS_KEYS.has(normalizedKey)) return;
+        }
         const bonus = toFiniteNumber(value);
         if (bonus === 0) return;
         mergedSkillBonuses[key] = toFiniteNumber(mergedSkillBonuses[key]) + bonus;
     });
 
+    if (humanTransformActive) {
+        HUMAN_TRANSFORM_FIXED_ZERO_BONUS_KEYS.forEach((key) => {
+            if (HUMAN_TRANSFORM_PASSIVE_ONLY_BONUS_KEYS.has(key)) return;
+            mergedSkillBonuses[key] = 0;
+        });
+        HUMAN_TRANSFORM_PASSIVE_ONLY_BONUS_KEYS.forEach((key) => {
+            mergedSkillBonuses[key] = toFiniteNumber(normalizedSource?.skillBonuses?.[key]);
+        });
+    }
+
     return {
-        ...source,
+        ...normalizedSource,
         skillBonuses: mergedSkillBonuses
     };
 }
@@ -984,7 +1136,7 @@ const skillAttributes = [
     "聴覚", "追跡", "軽業", "鑑定", "騎乗", "芸能", "言語学", "交渉", "呪文学", "職能", "真意看破", "水泳", "製作", "生存",
     "装置", "精神接続", "知識", "治療", "早業", "登攀", "指揮", "騙す", "変装", "魔道具操作", "角", "角リーチ", "牙", "爪",
     "爪リーチ", "羽", "羽リーチ", "尾", "尾リーチ", "外皮", "外殻", "再生", "吸血", "ドレイン", "鋼体", "足", "防御性能",
-    "防御性能倍率", "移動速度", "移動倍率", "飛行速度", "飛行倍率"
+    "防御性能倍率", "移動速度", "移動倍率", "飛行速度", "飛行倍率", "待機時間", "クールタイム"
 ];
 
 const attackOptions = [
@@ -1127,6 +1279,21 @@ window.getCurrentAttackMethodData = getCurrentAttackMethodData;
 async function startUp(){
     // プレイヤーデータ取得
     DebaglogSet("プレイヤーデータ取得" , selectedCharacter)
+    const playerId = getCurrentPlayerIdForBattleState();
+    DebaglogSet("[StartUp][LoadBattleState] 開始", { playerId });
+    await ensureBattleStateLoadedFromApi();
+    
+    // API呼び出し直後のメモリ状態を確認
+    DebaglogSet("[StartUp][LoadBattleState] 完了", {
+        playerId,
+        allCharacterKeys: Object.keys(retainedBuffSkillsByCharacter),
+        memoryState: Object.fromEntries(
+            Object.entries(retainedBuffSkillsByCharacter).map(([key, entries]) => [
+                key,
+                Array.isArray(entries) ? entries.length : 0
+            ])
+        )
+    });
 
     playerData = await acquireCharacterData(await fetchCharacterData(selectedCharacter[0].名前));
     DebaglogSet("プレイヤーデータ取得完了" , playerData)
@@ -1156,6 +1323,11 @@ async function startUp(){
             // characterList = addOrUpdateCharacter(characterList, addCharacterData)
 
             DebaglogSet(" characterList :", characterList)
+            if (Array.isArray(characterList)) {
+                characterList.forEach((characterEntry) => {
+                    applyStoredDamageStateToCharacter(characterEntry, characterEntry?.name || "");
+                });
+            }
 
             // 'top-right'セクションを読み込み
             
@@ -1185,6 +1357,14 @@ async function startUp(){
             await displayCharacters(characterList)
             console.log(" 画面にキャラデータを入れる :", characterList)
             // await toggleTotalView()
+            
+            // 【重要】JSON 保存データから発動中スキルを復元
+            DebaglogSet("[StartUp] 発動中スキル復元開始", { characterCount: characterList.length });
+            restoreRetainedBuffSkillsForLoadedCharacters(characterList);
+            DebaglogSet("[StartUp] 発動中スキル復元完了", { 
+                summary: buildRetainedBuffDebugSummary()
+            });
+            
             // ロード完了後にiframe（ロード画面）を非表示、メインコンテンツを表示
             document.getElementById('load-screen').style.display = 'none';
             document.getElementById('main-content').style.display = 'grid';
@@ -1195,6 +1375,10 @@ async function startUp(){
 
             
             // ページロード時に選択肢を設定
+            // 【重要】復元した発動中スキルを表示に反映させる
+            DebaglogSet("[StartUp] スキルテーブル再描画開始");
+            await rerenderSkillTables();
+            DebaglogSet("[StartUp] スキルテーブル再描画完了");
 
             const showSecondaryTab = await getTabContainerFunction("showSecondaryTab");
             await showSecondaryTab('equipment')
@@ -1224,6 +1408,8 @@ async function characterDataDisplay (characterDataPush){
     selectName = characterDataPush.name || "";
     loadSelectedSkillsForCharacter(selectName);
     playerData = characterDataPush;
+    applyStoredDamageStateToCharacter(playerData, selectName);
+    hydrateRetainedBuffSkillsForCharacter(selectName, playerData);
     normalizeCharacterItemState(playerData);
     updateBattleTurnDisplay(selectName);
     window.playerData = playerData;
@@ -2496,7 +2682,16 @@ window.renameSkillSetPresetFromSkillSetModal = renameSkillSetPresetFromSkillSetM
 const selectedAttackOptionByCharacter = {};
 const SELECTED_ATTACK_OPTION_STORAGE_KEY = "selected-attack-option-by-character-v1";
 const retainedBuffSkillsByCharacter = {};
+const skillCooldownsByCharacter = {};
 const battleTurnByCharacter = {};
+const damageByCharacter = {};
+const RETAINED_BUFF_INFINITE_TURNS = 9999999;
+const BATTLE_STATE_SAVE_DEBOUNCE_MS = 300;
+let battleStateLoadedPlayerId = "";
+let battleStateLoadPromise = null;
+const pendingBattleStateSaveCharacterNames = new Set();
+let battleStateSaveTimerId = null;
+let battleStateSaveInFlight = false;
 
 function loadSelectedAttackOptionByCharacterFromStorage() {
     try {
@@ -2531,6 +2726,384 @@ function getCharacterScopedKey(name = (selectName || playerData?.name || "")) {
     return normalizeSelectedSkillsCharacterName(name);
 }
 
+function normalizeStoredDamageEntry(damage) {
+    const source = (damage && typeof damage === "object") ? damage : {};
+    return {
+        HP_消費: clampNumber(Math.round(toFiniteNumber(source?.HP_消費)), 0, 100),
+        MP_消費: Math.max(0, Math.round(toFiniteNumber(source?.MP_消費))),
+        ST_消費: Math.max(0, Math.round(toFiniteNumber(source?.ST_消費)))
+    };
+}
+
+function getCurrentPlayerIdForBattleState() {
+    if (typeof getCurrentPlayerIdForMemo === "function") {
+        const resolved = normalizeBattleText(getCurrentPlayerIdForMemo());
+        if (resolved) return resolved;
+    }
+    const raw = window.sessionStorage.getItem("playerId")
+        || window.sessionStorage.getItem("username")
+        || window.localStorage.getItem("playerId")
+        || window.localStorage.getItem("username")
+        || "";
+    return normalizeBattleText(raw) || "guest";
+}
+
+function normalizeRetainedBuffSkillsForPersist(skills = []) {
+    return (Array.isArray(skills) ? skills : [])
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => entry && entry.skillData && toFiniteNumber(entry.remainingTurns) > 0);
+}
+
+function normalizeSkillCooldownEntry(entry = {}) {
+    const source = (entry && typeof entry === "object") ? entry : {};
+    const signatureText = normalizeBattleText(source?.signature);
+    const signatureParts = signatureText ? signatureText.split("::") : [];
+    const skillName = normalizeBattleText(source?.skillName || source?.name || signatureParts[1] || "");
+    const skillType = normalizeBattleText(source?.skillType || source?.type || signatureParts[0] || "").toUpperCase();
+    const signature = normalizeBattleText(
+        signatureText
+        || getSkillCooldownSignature({ 和名: skillName, 種別: skillType })
+    );
+    if (!signature) return null;
+
+    const totalTurnsRaw = toFiniteNumber(source?.totalTurns ?? source?.cooldownTurns);
+    const totalTurns = Math.max(0, Math.round(totalTurnsRaw));
+    const remainingTurnsRaw = Number.isFinite(Number(source?.remainingTurns))
+        ? toFiniteNumber(source?.remainingTurns)
+        : (totalTurns - toFiniteNumber(source?.elapsedTurns));
+    const remainingTurns = Math.max(0, Math.round(remainingTurnsRaw));
+    if (totalTurns <= 0 || remainingTurns <= 0) return null;
+
+    return {
+        signature,
+        skillName: skillName || normalizeBattleText(source?.skillName),
+        skillType,
+        totalTurns,
+        remainingTurns,
+        pendingWhileActive: Boolean(source?.pendingWhileActive)
+    };
+}
+
+function normalizeSkillCooldownEntriesForPersist(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .map((entry) => normalizeSkillCooldownEntry(entry))
+        .filter((entry) => Boolean(entry));
+}
+
+function normalizeBattleStateCharacterEntryFromApi(entry = {}) {
+    const source = (entry && typeof entry === "object") ? entry : {};
+    return {
+        battleTurn: Math.max(1, Math.round(toFiniteNumber(source?.battleTurn) || 1)),
+        retainedBuffSkills: normalizeRetainedBuffSkillsForPersist(source?.retainedBuffSkills),
+        skillCooldowns: normalizeSkillCooldownEntriesForPersist(source?.skillCooldowns),
+        damage: normalizeStoredDamageEntry(source?.damage)
+    };
+}
+
+function serializeRetainedBuffSkillsForBattleState(skills = []) {
+    return (Array.isArray(skills) ? skills : [])
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => entry && entry.skillData && toFiniteNumber(entry.remainingTurns) > 0)
+        .map((entry) => {
+            const totalTurns = normalizeRetainedBuffTurns(entry?.totalTurns, 1);
+            const remainingTurns = normalizeRetainedBuffTurns(entry?.remainingTurns, totalTurns);
+            const elapsedTurns = isInfiniteRetainedBuffTurns(totalTurns)
+                ? 0
+                : Math.max(0, totalTurns - remainingTurns);
+            const skillData = entry?.skillData || {};
+            return {
+                skillName: normalizeBattleText(skillData?.和名 || skillData?.技名 || skillData?.name),
+                skillType: normalizeBattleText(skillData?.種別 || ""),
+                totalTurns,
+                elapsedTurns
+            };
+        })
+        .filter((entry) => Boolean(entry.skillName));
+}
+
+function serializeSkillCooldownEntriesForBattleState(entries = []) {
+    return (Array.isArray(entries) ? entries : [])
+        .map((entry) => normalizeSkillCooldownEntry(entry))
+        .filter((entry) => Boolean(entry))
+        .map((entry) => ({
+            skillName: normalizeBattleText(entry.skillName),
+            skillType: normalizeBattleText(entry.skillType),
+            cooldownTurns: Math.max(0, Math.round(toFiniteNumber(entry.totalTurns))),
+            elapsedTurns: Math.max(0, Math.round(toFiniteNumber(entry.totalTurns) - toFiniteNumber(entry.remainingTurns))),
+            pendingWhileActive: Boolean(entry.pendingWhileActive)
+        }))
+        .filter((entry) => Boolean(entry.skillName) && entry.cooldownTurns > 0);
+}
+
+function clearBattleStateMemoryMaps() {
+    Object.keys(retainedBuffSkillsByCharacter).forEach((key) => delete retainedBuffSkillsByCharacter[key]);
+    Object.keys(skillCooldownsByCharacter).forEach((key) => delete skillCooldownsByCharacter[key]);
+    Object.keys(battleTurnByCharacter).forEach((key) => delete battleTurnByCharacter[key]);
+    Object.keys(damageByCharacter).forEach((key) => delete damageByCharacter[key]);
+}
+
+function applyBattleStateFromApi(states = {}) {
+    DebaglogSet("[ApplyBattleState] 開始", {
+        receivedStates: states,
+        stateKeys: Object.keys(states),
+        stateCount: Object.keys(states).length
+    });
+    clearBattleStateMemoryMaps();
+    if (!states || typeof states !== "object") {
+        DebaglogSet("[ApplyBattleState] states is falsy");
+        return;
+    }
+    Object.entries(states).forEach(([characterName, entry]) => {
+        const normalizedName = normalizeBattleText(characterName);
+        DebaglogSet("[ApplyBattleState] Processing", {
+            rawName: characterName,
+            normalizedName,
+            entryKeys: entry ? Object.keys(entry) : null,
+            retainedBuffSkillsCount: Array.isArray(entry?.retainedBuffSkills) ? entry.retainedBuffSkills.length : 0
+        });
+        if (!normalizedName) return;
+        const key = getCharacterScopedKey(normalizedName);
+        DebaglogSet("[ApplyBattleState] Storing with key", {
+            characterName: normalizedName,
+            key,
+            retainedBuffSkillsCount: Array.isArray(entry?.retainedBuffSkills) ? entry.retainedBuffSkills.length : 0
+        });
+        const normalizedEntry = normalizeBattleStateCharacterEntryFromApi(entry);
+        retainedBuffSkillsByCharacter[key] = normalizedEntry.retainedBuffSkills;
+        skillCooldownsByCharacter[key] = normalizedEntry.skillCooldowns;
+        battleTurnByCharacter[key] = normalizedEntry.battleTurn;
+        damageByCharacter[key] = normalizedEntry.damage;
+    });
+    DebaglogSet("[ApplyBattleState] 完了", {
+        allKeys: Object.keys(retainedBuffSkillsByCharacter),
+        entryCounts: Object.fromEntries(
+            Object.entries(retainedBuffSkillsByCharacter).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
+        )
+    });
+}
+
+async function loadBattleStateFromApi(characterNames = []) {
+    const playerId = getCurrentPlayerIdForBattleState();
+    const requestBody = {
+        playerId,
+        characterNames: (Array.isArray(characterNames) ? characterNames : [])
+            .map((name) => normalizeBattleText(name))
+            .filter(Boolean)
+    };
+    DebaglogSet("[loadBattleStateFromApi] fetch 開始", requestBody);
+    const response = await fetch('/api/battle-state/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+    });
+    DebaglogSet("[loadBattleStateFromApi] fetch 完了", {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText
+    });
+    if (!response.ok) {
+        throw new Error(`battle-state load failed: ${response.status}`);
+    }
+    const result = await response.json();
+    DebaglogSet("[loadBattleStateFromApi] JSON parse 完了", {
+        success: result?.success,
+        message: result?.message,
+        updatedAt: result?.updatedAt,
+        statesType: typeof result?.states,
+        statesKeys: result?.states ? Object.keys(result.states) : null,
+        statesCount: result?.states ? Object.keys(result.states).length : 0,
+        fullResult: result
+    });
+    if (!result?.success) {
+        throw new Error(result?.message || "battle-state load failed");
+    }
+    return (result?.states && typeof result.states === "object") ? result.states : {};
+}
+
+async function ensureBattleStateLoadedFromApi(forceReload = false) {
+    const playerId = getCurrentPlayerIdForBattleState();
+    if (!forceReload && battleStateLoadedPlayerId === playerId && battleStateLoadPromise) {
+        return battleStateLoadPromise;
+    }
+
+    battleStateLoadedPlayerId = playerId;
+    battleStateLoadPromise = (async () => {
+        try {
+            DebaglogSet("[ensureBattleStateLoadedFromApi] API 呼び出し開始", { playerId });
+            const states = await loadBattleStateFromApi();
+            DebaglogSet("[ensureBattleStateLoadedFromApi] API 呼び出し完了", {
+                playerId,
+                statesType: typeof states,
+                statesKeys: states ? Object.keys(states) : null,
+                statesCount: states ? Object.keys(states).length : 0,
+                fullStates: states
+            });
+            applyBattleStateFromApi(states);
+            return states;
+        } catch (error) {
+            DebaglogSet("battle state load failed:", error);
+            clearBattleStateMemoryMaps();
+            return {};
+        }
+    })();
+
+    return battleStateLoadPromise;
+}
+
+function buildBattleStatePayloadForCharacter(characterName = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(characterName);
+    const key = getCharacterScopedKey(normalizedName);
+    return {
+        battleTurn: Math.max(1, Math.round(toFiniteNumber(battleTurnByCharacter[key]) || 1)),
+        retainedBuffSkills: serializeRetainedBuffSkillsForBattleState(retainedBuffSkillsByCharacter[key]),
+        skillCooldowns: serializeSkillCooldownEntriesForBattleState(skillCooldownsByCharacter[key]),
+        damage: normalizeStoredDamageEntry(damageByCharacter[key])
+    };
+}
+
+function trimBattleStatePayloadForApi(state = {}) {
+    const source = (state && typeof state === "object") ? state : {};
+    const retainedBuffSkills = (Array.isArray(source?.retainedBuffSkills) ? source.retainedBuffSkills : [])
+        .map((entry) => {
+            const totalTurns = Math.max(0, Math.round(toFiniteNumber(entry?.totalTurns)));
+            const remainingTurns = Math.max(0, Math.round(toFiniteNumber(entry?.remainingTurns)));
+            const elapsedTurnsRaw = Number.isFinite(Number(entry?.elapsedTurns))
+                ? toFiniteNumber(entry?.elapsedTurns)
+                : Math.max(0, totalTurns - remainingTurns);
+            return {
+                skillName: normalizeBattleText(entry?.skillName),
+                skillType: normalizeBattleText(entry?.skillType || entry?.type).toUpperCase(),
+                totalTurns,
+                elapsedTurns: Math.max(0, Math.round(elapsedTurnsRaw))
+            };
+        })
+        .filter((entry) => Boolean(entry.skillName) && entry.totalTurns > 0);
+    const skillCooldowns = (Array.isArray(source?.skillCooldowns) ? source.skillCooldowns : [])
+        .map((entry) => {
+            const cooldownTurns = Math.max(0, Math.round(toFiniteNumber(entry?.cooldownTurns ?? entry?.totalTurns)));
+            const remainingTurns = Math.max(0, Math.round(toFiniteNumber(entry?.remainingTurns)));
+            const elapsedTurnsRaw = Number.isFinite(Number(entry?.elapsedTurns))
+                ? toFiniteNumber(entry?.elapsedTurns)
+                : Math.max(0, cooldownTurns - remainingTurns);
+            return {
+                skillName: normalizeBattleText(entry?.skillName),
+                skillType: normalizeBattleText(entry?.skillType || entry?.type).toUpperCase(),
+                cooldownTurns,
+                elapsedTurns: Math.max(0, Math.round(elapsedTurnsRaw)),
+                pendingWhileActive: Boolean(entry?.pendingWhileActive)
+            };
+        })
+        .filter((entry) => Boolean(entry.skillName) && entry.cooldownTurns > 0);
+
+    return {
+        battleTurn: Math.max(1, Math.round(toFiniteNumber(source?.battleTurn) || 1)),
+        retainedBuffSkills,
+        skillCooldowns,
+        damage: normalizeStoredDamageEntry(source?.damage)
+    };
+}
+
+async function saveBattleStateForCharacterToApi(characterName = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(characterName);
+    if (!normalizedName) return;
+    const rawState = buildBattleStatePayloadForCharacter(normalizedName);
+    const state = trimBattleStatePayloadForApi(rawState);
+
+    const response = await fetch('/api/battle-state/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            playerId: getCurrentPlayerIdForBattleState(),
+            characterName: normalizedName,
+            state
+        })
+    });
+    if (!response.ok) {
+        throw new Error(`battle-state save failed: ${response.status}`);
+    }
+    const result = await response.json();
+    if (!result?.success) {
+        throw new Error(result?.message || "battle-state save failed");
+    }
+}
+
+async function flushBattleStateSaveQueue() {
+    if (battleStateSaveInFlight) return;
+    battleStateSaveInFlight = true;
+    try {
+        while (pendingBattleStateSaveCharacterNames.size > 0) {
+            const names = Array.from(pendingBattleStateSaveCharacterNames);
+            pendingBattleStateSaveCharacterNames.clear();
+            for (const name of names) {
+                try {
+                    await saveBattleStateForCharacterToApi(name);
+                } catch (error) {
+                    DebaglogSet("battle state save failed:", name, error);
+                }
+            }
+        }
+    } finally {
+        battleStateSaveInFlight = false;
+    }
+}
+
+function queueBattleStateSaveForCharacter(characterName = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(characterName);
+    if (!normalizedName) return;
+    pendingBattleStateSaveCharacterNames.add(normalizedName);
+    if (battleStateSaveTimerId) {
+        window.clearTimeout(battleStateSaveTimerId);
+    }
+    battleStateSaveTimerId = window.setTimeout(() => {
+        battleStateSaveTimerId = null;
+        flushBattleStateSaveQueue().catch((error) => {
+            DebaglogSet("battle state flush failed:", error);
+        });
+    }, BATTLE_STATE_SAVE_DEBOUNCE_MS);
+}
+
+async function saveBattleStateForCharacterNow(characterName = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(characterName);
+    if (!normalizedName) return;
+    pendingBattleStateSaveCharacterNames.delete(normalizedName);
+    if (battleStateSaveTimerId) {
+        window.clearTimeout(battleStateSaveTimerId);
+        battleStateSaveTimerId = null;
+    }
+    try {
+        await saveBattleStateForCharacterToApi(normalizedName);
+    } catch (error) {
+        DebaglogSet("battle state immediate save failed:", normalizedName, error);
+    }
+}
+
+function setDamageStateForCharacter(characterName = (selectName || playerData?.name || ""), damage = {}) {
+    const normalizedName = normalizeBattleText(characterName);
+    if (!normalizedName) {
+        return normalizeStoredDamageEntry(damage);
+    }
+    const key = getCharacterScopedKey(normalizedName);
+    const normalizedDamage = normalizeStoredDamageEntry(damage);
+    damageByCharacter[key] = { ...normalizedDamage };
+    return damageByCharacter[key];
+}
+
+function applyStoredDamageStateToCharacter(character, name = "") {
+    if (!character || typeof character !== "object") return;
+    const scopedName = normalizeBattleText(name || character?.name || selectName || playerData?.name || "");
+    if (!scopedName) return;
+    const key = getCharacterScopedKey(scopedName);
+    const runtimeDamage = normalizeStoredDamageEntry(character?.damage || {});
+    const storedDamage = normalizeStoredDamageEntry(damageByCharacter[key] || {});
+    const mergedDamage = {
+        HP_消費: Math.max(runtimeDamage.HP_消費, storedDamage.HP_消費),
+        MP_消費: Math.max(runtimeDamage.MP_消費, storedDamage.MP_消費),
+        ST_消費: Math.max(runtimeDamage.ST_消費, storedDamage.ST_消費)
+    };
+    character.damage = { ...mergedDamage };
+    setDamageStateForCharacter(scopedName, mergedDamage);
+}
+
 function getRetainedBuffSkillsForCharacter(name = (selectName || playerData?.name || "")) {
     const key = getCharacterScopedKey(name);
     if (!Array.isArray(retainedBuffSkillsByCharacter[key])) {
@@ -2539,16 +3112,136 @@ function getRetainedBuffSkillsForCharacter(name = (selectName || playerData?.nam
     return retainedBuffSkillsByCharacter[key];
 }
 
+function getSkillCooldownEntriesForCharacter(name = (selectName || playerData?.name || "")) {
+    const key = getCharacterScopedKey(name);
+    if (!Array.isArray(skillCooldownsByCharacter[key])) {
+        skillCooldownsByCharacter[key] = [];
+    }
+    return skillCooldownsByCharacter[key];
+}
+
+function setSkillCooldownEntriesForCharacter(name = (selectName || playerData?.name || ""), entries = []) {
+    const key = getCharacterScopedKey(name);
+    skillCooldownsByCharacter[key] = normalizeSkillCooldownEntriesForPersist(entries);
+    queueBattleStateSaveForCharacter(name);
+    return skillCooldownsByCharacter[key];
+}
+
+function getSkillCooldownEntryBySignature(signature = "", name = (selectName || playerData?.name || "")) {
+    const normalizedSignature = normalizeBattleText(signature);
+    if (!normalizedSignature) return null;
+    const entries = getSkillCooldownEntriesForCharacter(name);
+    return entries.find((entry) => normalizeBattleText(entry?.signature) === normalizedSignature) || null;
+}
+
+function upsertSkillCooldownEntryForCharacter(name = (selectName || playerData?.name || ""), entry = null) {
+    const normalizedEntry = normalizeSkillCooldownEntry(entry);
+    if (!normalizedEntry) return null;
+    const entries = getSkillCooldownEntriesForCharacter(name);
+    const index = entries.findIndex((row) => normalizeBattleText(row?.signature) === normalizedEntry.signature);
+    if (index >= 0) {
+        entries[index] = normalizedEntry;
+    } else {
+        entries.push(normalizedEntry);
+    }
+    setSkillCooldownEntriesForCharacter(name, entries);
+    return normalizedEntry;
+}
+
+function normalizeRetainedBuffTurns(value, fallback = 1) {
+    const numericValue = Math.max(0, Math.round(toFiniteNumber(value)));
+    const fallbackValue = Math.max(1, Math.round(toFiniteNumber(fallback) || 1));
+    const resolved = numericValue > 0 ? numericValue : fallbackValue;
+    if (resolved >= RETAINED_BUFF_INFINITE_TURNS) {
+        return RETAINED_BUFF_INFINITE_TURNS;
+    }
+    return resolved;
+}
+
+function isInfiniteRetainedBuffTurns(value) {
+    return Math.round(toFiniteNumber(value)) >= RETAINED_BUFF_INFINITE_TURNS;
+}
+
 function normalizeRetainedBuffEntry(entry) {
     if (!entry || typeof entry !== "object") return null;
-    const normalizeTurns = (value, fallback = 1) => {
-        const num = Math.max(0, Math.round(toFiniteNumber(value)));
-        return num > 0 ? num : Math.max(1, Math.round(toFiniteNumber(fallback) || 1));
-    };
+    
+    // API 形式: { skillName, skillType, totalTurns, elapsedTurns }
+    const apiSkillName = normalizeBattleText(entry?.skillName || "");
+    const apiSkillType = normalizeBattleText(entry?.skillType || "").toUpperCase();
+    
+    // JSON 簡略形式: { skillData: { skillName, skillType, ... }, totalTurns, remainingTurns, ... }
+    const compactSkillName = normalizeBattleText(entry?.name || apiSkillName || "");
+    const compactSkillType = normalizeBattleText(entry?.type || apiSkillType || "").toUpperCase();
+    
+    // API 形式の場合、API から返ってくるのは elapsedTurns と totalTurns
+    if (apiSkillName && (entry?.hasOwnProperty?.("elapsedTurns") || entry?.hasOwnProperty?.("totalTurns"))) {
+        const totalTurns = normalizeRetainedBuffTurns(entry?.totalTurns, 1);
+        const elapsedTurns = toFiniteNumber(entry?.elapsedTurns);
+        const remainingTurns = isInfiniteRetainedBuffTurns(totalTurns)
+            ? RETAINED_BUFF_INFINITE_TURNS
+            : normalizeRetainedBuffTurns(totalTurns - elapsedTurns, totalTurns);
+        
+        if (!isInfiniteRetainedBuffTurns(remainingTurns) && remainingTurns <= 0) return null;
+        
+        const stubSkillData = {
+            和名: apiSkillName,
+            技名: apiSkillName,
+            name: apiSkillName,
+            種別: apiSkillType
+        };
+        DebaglogSet("[NormalizeRetainedBuff][APIFormat]", {
+            skillName: apiSkillName,
+            skillType: apiSkillType,
+            totalTurns,
+            remainingTurns
+        });
+        return {
+            skillData: stubSkillData,
+            hasEffectDuration: true,
+            totalTurns,
+            remainingTurns
+        };
+    }
+    
+    // JSON 形式（stab）: entry に skillData がない
+    if (!entry.skillData && compactSkillName) {
+        const totalTurns = normalizeRetainedBuffTurns(entry?.totalTurns, 1);
+        const remainingTurnsRaw = Number.isFinite(Number(entry?.remainingTurns))
+            ? toFiniteNumber(entry?.remainingTurns)
+            : (totalTurns - toFiniteNumber(entry?.elapsedTurns));
+        const remainingTurns = isInfiniteRetainedBuffTurns(totalTurns)
+            ? RETAINED_BUFF_INFINITE_TURNS
+            : normalizeRetainedBuffTurns(remainingTurnsRaw, totalTurns);
+        if (!isInfiniteRetainedBuffTurns(remainingTurns) && remainingTurns <= 0) return null;
+        const stubSkillData = {
+            和名: compactSkillName,
+            技名: compactSkillName,
+            name: compactSkillName,
+            種別: compactSkillType
+        };
+        return {
+            skillData: stubSkillData,
+            hasEffectDuration: true,
+            totalTurns,
+            remainingTurns
+        };
+    }
     if (entry.skillData && typeof entry.skillData === "object") {
-        const hasEffectDuration = Boolean(entry.hasEffectDuration);
-        const totalTurns = normalizeTurns(entry.totalTurns, hasEffectDuration ? 2 : 1);
-        const remainingTurns = normalizeTurns(entry.remainingTurns, totalTurns);
+        const skillName = normalizeBattleText(
+            entry?.skillData?.和名 || entry?.skillData?.技名 || entry?.skillData?.name
+        );
+        if (!skillName) return null;
+        const humanTransformActive = isHumanTransformSkillData(entry?.skillData);
+        const hasEffectDuration = Boolean(entry.hasEffectDuration)
+            || isInfiniteRetainedBuffTurns(entry?.totalTurns)
+            || isInfiniteRetainedBuffTurns(entry?.remainingTurns)
+            || humanTransformActive;
+        const totalTurns = humanTransformActive
+            ? RETAINED_BUFF_INFINITE_TURNS
+            : normalizeRetainedBuffTurns(entry.totalTurns, hasEffectDuration ? 2 : 1);
+        const remainingTurns = humanTransformActive
+            ? RETAINED_BUFF_INFINITE_TURNS
+            : normalizeRetainedBuffTurns(entry.remainingTurns, totalTurns);
         return {
             skillData: { ...entry.skillData },
             hasEffectDuration,
@@ -2557,26 +3250,208 @@ function normalizeRetainedBuffEntry(entry) {
         };
     }
     // 旧データ互換: スキル本体だけ保存されていた形式
-    const totalTurns = 1;
+    const legacySkillName = normalizeBattleText(entry?.和名 || entry?.技名 || entry?.name);
+    if (!legacySkillName) return null;
+    const totalTurns = isHumanTransformSkillData(entry)
+        ? RETAINED_BUFF_INFINITE_TURNS
+        : 1;
     return {
         skillData: { ...entry },
-        hasEffectDuration: false,
+        hasEffectDuration: isInfiniteRetainedBuffTurns(totalTurns) || isHumanTransformSkillData(entry),
         totalTurns,
         remainingTurns: totalTurns
     };
+}
+
+function getAllSkillDataCandidatesForCharacter(characterDataSource = playerData) {
+    const source = (characterDataSource && typeof characterDataSource === "object") ? characterDataSource : {};
+    const results = [];
+    const pushSkill = (skill) => {
+        const skillData = getSkillData(skill);
+        if (!skillData || typeof skillData !== "object") return;
+        results.push(skillData);
+    };
+    const pushGroup = (group) => {
+        if (!group || typeof group !== "object") return;
+        Object.values(group).forEach((list) => {
+            if (!Array.isArray(list)) return;
+            list.forEach((item) => pushSkill(item));
+        });
+    };
+
+    pushGroup(source?.skills);
+    pushGroup(source?.magic);
+    return results;
+}
+
+function normalizeSkillNameForCompare(value) {
+    return String(value ?? "")
+        .normalize("NFKC")
+        .replace(/\s+/g, "")
+        .trim();
+}
+
+function findSkillDataByNameAndTypeForCharacter(skillName = "", skillType = "", characterDataSource = playerData) {
+    const targetName = normalizeBattleText(skillName);
+    const targetNameKey = normalizeSkillNameForCompare(skillName);
+    const targetType = normalizeBattleText(skillType).toUpperCase();
+    if (!targetName || !targetNameKey) return null;
+    const candidates = getAllSkillDataCandidatesForCharacter(characterDataSource);
+    const byNameKey = (skill) => normalizeSkillNameForCompare(skill?.和名 || skill?.技名 || skill?.name);
+    const matchedByName = candidates.filter((skill) => (
+        byNameKey(skill) === targetNameKey
+    ));
+    const fuzzyMatched = matchedByName.length
+        ? matchedByName
+        : candidates.filter((skill) => {
+            const currentNameKey = byNameKey(skill);
+            return currentNameKey && (
+                currentNameKey.includes(targetNameKey) || targetNameKey.includes(currentNameKey)
+            );
+        });
+    if (!fuzzyMatched.length) return null;
+    if (!targetType) return { ...fuzzyMatched[0] };
+    const matchedByType = fuzzyMatched.find((skill) => (
+        normalizeBattleText(skill?.種別).toUpperCase() === targetType
+    ));
+    return { ...(matchedByType || fuzzyMatched[0]) };
+}
+
+function hydrateRetainedBuffSkillsForCharacter(characterName = (selectName || playerData?.name || ""), characterDataSource = playerData) {
+    const normalizedName = normalizeBattleText(characterName);
+    if (!normalizedName) return;
+    const sourceCharacterData = (
+        characterDataSource
+        && typeof characterDataSource === "object"
+        && (
+            (characterDataSource.skills && typeof characterDataSource.skills === "object")
+            || (characterDataSource.magic && typeof characterDataSource.magic === "object")
+        )
+    )
+        ? characterDataSource
+        : (
+            Array.isArray(characterList)
+                ? (characterList.find((entry) => normalizeBattleText(entry?.name) === normalizedName) || playerData)
+                : playerData
+        );
+
+    const currentEntries = getRetainedBuffSkillsForCharacter(normalizedName)
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => Boolean(entry) && entry.skillData);
+    if (!currentEntries.length) {
+        DebaglogSet("[Hydrate][Empty]", { characterName: normalizedName });
+        return;
+    }
+    
+    DebaglogSet("[Hydrate][Start]", {
+        characterName: normalizedName,
+        entryCount: currentEntries.length,
+        hasSourceSkills: Boolean(sourceCharacterData?.skills),
+        hasSourcMagic: Boolean(sourceCharacterData?.magic),
+        entries: currentEntries.map((e) => ({
+            name: normalizeBattleText(e?.skillData?.和名 || e?.skillData?.技名 || e?.skillData?.name),
+            type: normalizeBattleText(e?.skillData?.種別 || "")
+        }))
+    });
+
+    let changed = false;
+    const hydratedEntries = currentEntries.map((entry) => {
+        const skillData = entry?.skillData || {};
+        const skillName = normalizeBattleText(skillData?.和名 || skillData?.技名 || skillData?.name);
+        const skillType = normalizeBattleText(skillData?.種別 || "");
+        if (!skillName) {
+            changed = true;
+            return null;
+        }
+        const resolvedSkillData = findSkillDataByNameAndTypeForCharacter(skillName, skillType, sourceCharacterData);
+        DebaglogSet("[Hydrate][Resolution]", {
+            inputName: skillName,
+            inputType: skillType,
+            resolved: Boolean(resolvedSkillData),
+            resolvedName: resolvedSkillData ? normalizeBattleText(resolvedSkillData?.和名 || resolvedSkillData?.技名 || resolvedSkillData?.name) : null,
+            resolvedKeys: resolvedSkillData ? Object.keys(resolvedSkillData).length : 0
+        });
+        if (!resolvedSkillData) return entry;
+        const beforeName = normalizeBattleText(skillData?.和名 || skillData?.技名 || skillData?.name);
+        const beforeType = normalizeBattleText(skillData?.種別 || "").toUpperCase();
+        const afterName = normalizeBattleText(
+            resolvedSkillData?.和名 || resolvedSkillData?.技名 || resolvedSkillData?.name
+        );
+        const afterType = normalizeBattleText(resolvedSkillData?.種別 || "").toUpperCase();
+        if (beforeName !== afterName || beforeType !== afterType || Object.keys(skillData).length < Object.keys(resolvedSkillData).length) {
+            changed = true;
+        }
+        return {
+            ...entry,
+            skillData: { ...resolvedSkillData }
+        };
+    }).filter((entry) => Boolean(entry) && entry.skillData);
+
+    if (!changed && hydratedEntries.length === currentEntries.length) {
+        DebaglogSet("[Hydrate][NoChange]", { characterName: normalizedName });
+        return;
+    }
+    DebaglogSet("[Hydrate][Saving]", {
+        characterName: normalizedName,
+        beforeCount: currentEntries.length,
+        afterCount: hydratedEntries.length,
+        changed
+    });
+    setRetainedBuffSkillsForCharacter(normalizedName, hydratedEntries);
+}
+
+function buildRetainedBuffDebugSummary(name = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(name);
+    const entries = getRetainedBuffSkillsForCharacter(normalizedName)
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => Boolean(entry) && entry.skillData);
+    return entries.map((entry) => ({
+        name: normalizeBattleText(entry?.skillData?.和名 || entry?.skillData?.技名 || entry?.skillData?.name),
+        type: normalizeBattleText(entry?.skillData?.種別 || ""),
+        remaining: normalizeRetainedBuffTurns(entry?.remainingTurns, 1),
+        total: normalizeRetainedBuffTurns(entry?.totalTurns, 1)
+    }));
+}
+
+function restoreRetainedBuffSkillsForLoadedCharacters(characters = characterList) {
+    const list = Array.isArray(characters) ? characters : [];
+    if (!list.length) return;
+
+    list.forEach((character) => {
+        const characterName = normalizeBattleText(character?.name);
+        if (!characterName) return;
+        const before = buildRetainedBuffDebugSummary(characterName);
+        hydrateRetainedBuffSkillsForCharacter(characterName, character);
+        const after = buildRetainedBuffDebugSummary(characterName);
+        DebaglogSet("[BattleState][RetainedRestore]", {
+            characterName,
+            beforeCount: before.length,
+            afterCount: after.length,
+            before,
+            after
+        });
+    });
 }
 
 function setRetainedBuffSkillsForCharacter(name = (selectName || playerData?.name || ""), skills = []) {
     const key = getCharacterScopedKey(name);
     retainedBuffSkillsByCharacter[key] = (Array.isArray(skills) ? skills : [])
         .map((entry) => normalizeRetainedBuffEntry(entry))
-        .filter((entry) => entry && entry.skillData);
+        .filter((entry) => {
+            if (!entry || !entry.skillData) return false;
+            const skillName = normalizeBattleText(
+                entry?.skillData?.和名 || entry?.skillData?.技名 || entry?.skillData?.name
+            );
+            return Boolean(skillName);
+        });
+    queueBattleStateSaveForCharacter(name);
     return retainedBuffSkillsByCharacter[key];
 }
 
 function clearRetainedBuffSkillsForCharacter(name = (selectName || playerData?.name || "")) {
     const key = getCharacterScopedKey(name);
     retainedBuffSkillsByCharacter[key] = [];
+    queueBattleStateSaveForCharacter(name);
 }
 
 function getBattleTurnForCharacter(name = (selectName || playerData?.name || "")) {
@@ -2589,6 +3464,7 @@ function getBattleTurnForCharacter(name = (selectName || playerData?.name || "")
 function setBattleTurnForCharacter(name = (selectName || playerData?.name || ""), turn = 1) {
     const key = getCharacterScopedKey(name);
     battleTurnByCharacter[key] = Math.max(1, Math.round(toFiniteNumber(turn) || 1));
+    queueBattleStateSaveForCharacter(name);
     return battleTurnByCharacter[key];
 }
 
@@ -2721,51 +3597,26 @@ function buildConditionalPassiveStatusBonuses(activeConditionalPassives = []) {
     return bonuses;
 }
 
-function buildStatusBonusesFromSkillList(skillList = []) {
-    const bonuses = {};
-    [...CONDITIONAL_PASSIVE_GLOBAL_BOOST_KEYS].forEach((key) => {
-        bonuses[key] = 0;
-    });
-
-    (Array.isArray(skillList) ? skillList : []).forEach((entry) => {
-        const normalizedEntry = normalizeRetainedBuffEntry(entry);
-        if (toFiniteNumber(normalizedEntry?.remainingTurns) <= 0) return;
-        const skillData = normalizedEntry?.skillData || entry;
-        if (!skillData || typeof skillData !== "object") return;
-        Object.entries(skillData).forEach(([key, value]) => {
-            const baseKey = normalizeConditionalPassiveGlobalBoostKey(key);
-            if (!baseKey) return;
-            bonuses[baseKey] = toFiniteNumber(bonuses[baseKey]) + toFiniteNumber(value);
-        });
-    });
-    return bonuses;
-}
-
-function mergeStatusBonuses(...bonusMaps) {
-    const merged = {};
-    [...CONDITIONAL_PASSIVE_GLOBAL_BOOST_KEYS].forEach((key) => {
-        merged[key] = 0;
-    });
-    bonusMaps.forEach((bonusMap) => {
-        if (!bonusMap || typeof bonusMap !== "object") return;
-        Object.entries(bonusMap).forEach(([key, value]) => {
-            const baseKey = normalizeConditionalPassiveGlobalBoostKey(key);
-            if (!baseKey) return;
-            merged[baseKey] = toFiniteNumber(merged[baseKey]) + toFiniteNumber(value);
-        });
-    });
-    return merged;
+function getRetainedBuffSkillDataListForCharacter(characterName = (selectName || playerData?.name || "")) {
+    return getRetainedBuffSkillsForCharacter(characterName)
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => entry && entry.skillData && toFiniteNumber(entry.remainingTurns) > 0)
+        .map((entry) => entry.skillData)
+        .filter((skillData) => skillData && typeof skillData === "object");
 }
 
 function buildRuntimeStatusBonuses({ activeConditionalPassives = [], characterName = (selectName || playerData?.name || "") } = {}) {
-    const conditionalBonuses = buildConditionalPassiveStatusBonuses(activeConditionalPassives);
-    const retainedBuffs = getRetainedBuffSkillsForCharacter(characterName);
-    const retainedBonuses = buildStatusBonusesFromSkillList(retainedBuffs);
-    return mergeStatusBonuses(conditionalBonuses, retainedBonuses);
+    const passiveLikeSkills = (Array.isArray(activeConditionalPassives) && activeConditionalPassives.length > 0)
+        ? activeConditionalPassives
+        : getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, { characterName });
+    return buildConditionalPassiveStatusBonuses(passiveLikeSkills);
 }
 
 function isRetainableBuffSkill(skillData) {
     if (!skillData || typeof skillData !== "object") return false;
+    // 「発動中」扱いはパッシブと同系統の処理に寄せるため、
+    // 持続ターンがあるスキルは種別/属性の例外なしで対象に含める。
+    if (parseEffectDurationTurns(skillData) > 0) return true;
     const skillType = normalizeBattleText(skillData?.種別).toUpperCase();
     const skillName = normalizeBattleText(skillData?.技名 || skillData?.和名 || skillData?.name);
     const detail = normalizeBattleText(skillData?.詳細 || skillData?.description);
@@ -2823,10 +3674,14 @@ function getRetainableBuffSkillsFromSelection(targetSelectedSkills = selectedSki
         if (!skillData || typeof skillData !== "object") return;
         if (!isRetainableBuffSkill(skillData)) return;
         const durationTurns = parseEffectDurationTurns(skillData);
-        const totalTurns = durationTurns > 0 ? durationTurns : 1;
+        const infiniteByDuration = durationTurns >= RETAINED_BUFF_INFINITE_TURNS;
+        const infiniteBySkill = isHumanTransformSkillData(skillData);
+        const totalTurns = (infiniteByDuration || infiniteBySkill)
+            ? RETAINED_BUFF_INFINITE_TURNS
+            : (durationTurns > 0 ? durationTurns : 1);
         list.push({
             skillData: { ...skillData },
-            hasEffectDuration: durationTurns > 0,
+            hasEffectDuration: durationTurns > 0 || infiniteBySkill || infiniteByDuration,
             totalTurns,
             remainingTurns: totalTurns
         });
@@ -2835,11 +3690,28 @@ function getRetainableBuffSkillsFromSelection(targetSelectedSkills = selectedSki
 }
 
 function buildBuffSkillSignature(skillData) {
-    return [
-        normalizeBattleText(skillData?.種別),
-        normalizeBattleText(skillData?.技名 || skillData?.和名 || skillData?.name),
-        normalizeBattleText(skillData?.詳細 || skillData?.description)
-    ].join("::");
+    const source = (skillData && typeof skillData === "object") ? skillData : {};
+    const type = normalizeBattleText(source?.種別).toUpperCase();
+    const name = normalizeBattleText(source?.技名 || source?.和名 || source?.name);
+    if (!name) return "";
+    return [type, name].join("::");
+}
+
+function getSkillCooldownSignature(skillData) {
+    const source = (skillData && typeof skillData === "object") ? skillData : {};
+    const type = normalizeBattleText(source?.種別).toUpperCase();
+    const name = normalizeBattleText(source?.和名 || source?.技名 || source?.name);
+    if (!name) return "";
+    return [type, name].join("::");
+}
+
+function resolveSkillCooldownTurnsForUse(skillData) {
+    const resolved = getSkillCooldownFromData(skillData);
+    if (!resolved?.hasValue) return 0;
+    const baseTurns = normalizeCooldownTurnValue(resolved.value);
+    if (baseTurns <= 0) return 0;
+    const passiveAdjusted = normalizeCooldownTurnValue(baseTurns + getSkillTableCooldownGlobalBonus());
+    return Math.max(0, passiveAdjusted);
 }
 
 function retainUsedBuffSkillsFromSelection(targetSelectedSkills = selectedSkills, characterName = (selectName || playerData?.name || "")) {
@@ -2866,12 +3738,14 @@ function retainUsedBuffSkillsFromSelection(targetSelectedSkills = selectedSkills
             if (index >= 0) {
                 const normalized = normalizeRetainedBuffEntry(merged[index]);
                 const nextTotalTurns = Math.max(
-                    Math.round(toFiniteNumber(normalized?.totalTurns) || 1),
-                    Math.round(toFiniteNumber(entry?.totalTurns) || 1)
+                    normalizeRetainedBuffTurns(normalized?.totalTurns, 1),
+                    normalizeRetainedBuffTurns(entry?.totalTurns, 1)
                 );
                 merged[index] = {
                     skillData: { ...skillData },
-                    hasEffectDuration: Boolean(entry?.hasEffectDuration),
+                    hasEffectDuration: Boolean(entry?.hasEffectDuration)
+                        || isInfiniteRetainedBuffTurns(nextTotalTurns)
+                        || isHumanTransformSkillData(skillData),
                     totalTurns: nextTotalTurns,
                     remainingTurns: nextTotalTurns
                 };
@@ -2882,15 +3756,122 @@ function retainUsedBuffSkillsFromSelection(targetSelectedSkills = selectedSkills
         seen.add(signature);
         merged.push({
             skillData: { ...skillData },
-            hasEffectDuration: Boolean(entry?.hasEffectDuration),
-            totalTurns: Math.max(1, Math.round(toFiniteNumber(entry?.totalTurns) || 1)),
-            remainingTurns: Math.max(1, Math.round(toFiniteNumber(entry?.remainingTurns || entry?.totalTurns) || 1))
+            hasEffectDuration: Boolean(entry?.hasEffectDuration)
+                || isInfiniteRetainedBuffTurns(entry?.totalTurns)
+                || isHumanTransformSkillData(skillData),
+            totalTurns: normalizeRetainedBuffTurns(entry?.totalTurns, 1),
+            remainingTurns: normalizeRetainedBuffTurns(entry?.remainingTurns || entry?.totalTurns, 1)
         });
         addedCount += 1;
     });
 
     setRetainedBuffSkillsForCharacter(characterName, merged);
     return { addedCount, refreshedCount, totalCount: merged.length };
+}
+
+function retainUsedSkillCooldownsFromSelection(targetSelectedSkills = selectedSkills, characterName = (selectName || playerData?.name || "")) {
+    const normalizedCharacterName = normalizeBattleText(characterName);
+    if (!normalizedCharacterName) {
+        return { startedCount: 0, totalCount: 0 };
+    }
+
+    const currentEntries = getSkillCooldownEntriesForCharacter(normalizedCharacterName)
+        .map((entry) => normalizeSkillCooldownEntry(entry))
+        .filter((entry) => Boolean(entry));
+    const cooldownMap = new Map(currentEntries.map((entry) => [entry.signature, entry]));
+    const activeBuffSignatureSet = buildActiveBuffSignatureSet(normalizedCharacterName);
+    let startedCount = 0;
+
+    SELECTED_SKILL_SLOT_ORDER.forEach((slot) => {
+        const skillData = getSkillData(targetSelectedSkills?.[slot]);
+        if (!skillData || typeof skillData !== "object") return;
+        const totalTurns = resolveSkillCooldownTurnsForUse(skillData);
+        if (totalTurns <= 0) return;
+
+        const signature = getSkillCooldownSignature(skillData);
+        if (!signature) return;
+        const pendingWhileActive = activeBuffSignatureSet.has(signature);
+        const nextEntry = normalizeSkillCooldownEntry({
+            signature,
+            skillName: normalizeBattleText(skillData?.和名 || skillData?.技名 || skillData?.name),
+            totalTurns,
+            remainingTurns: totalTurns,
+            pendingWhileActive
+        });
+        if (!nextEntry) return;
+        cooldownMap.set(signature, nextEntry);
+        startedCount += 1;
+    });
+
+    const nextEntries = Array.from(cooldownMap.values());
+    setSkillCooldownEntriesForCharacter(normalizedCharacterName, nextEntries);
+    return { startedCount, totalCount: nextEntries.length };
+}
+
+function advanceSkillCooldownsForCharacter(characterName = (selectName || playerData?.name || "")) {
+    const normalizedCharacterName = normalizeBattleText(characterName);
+    if (!normalizedCharacterName) return;
+
+    const entries = getSkillCooldownEntriesForCharacter(normalizedCharacterName)
+        .map((entry) => normalizeSkillCooldownEntry(entry))
+        .filter((entry) => Boolean(entry));
+    if (!entries.length) return;
+
+    const activeBuffSignatureSet = buildActiveBuffSignatureSet(normalizedCharacterName);
+    const nextEntries = entries
+        .map((entry) => {
+            const current = { ...entry };
+            const isActiveNow = activeBuffSignatureSet.has(current.signature);
+            if (isActiveNow) {
+                current.pendingWhileActive = true;
+                return current;
+            }
+            if (current.pendingWhileActive) {
+                current.pendingWhileActive = false;
+                return current;
+            }
+            const nextRemaining = Math.max(0, Math.round(toFiniteNumber(current.remainingTurns)) - 1);
+            if (nextRemaining <= 0) return null;
+            current.remainingTurns = nextRemaining;
+            return current;
+        })
+        .filter((entry) => Boolean(entry));
+
+    setSkillCooldownEntriesForCharacter(normalizedCharacterName, nextEntries);
+}
+
+function removeRetainedBuffSkillByTypeAndName(type = "", name = "", characterName = (selectName || playerData?.name || "")) {
+    const normalizedName = normalizeBattleText(name);
+    if (!normalizedName) {
+        return { removed: false, totalCount: getRetainedBuffSkillsForCharacter(characterName).length };
+    }
+    const normalizedType = normalizeBattleText(type).toUpperCase();
+    const list = getRetainedBuffSkillsForCharacter(characterName)
+        .map((entry) => normalizeRetainedBuffEntry(entry))
+        .filter((entry) => entry && entry.skillData);
+    const nextList = [];
+    let removed = false;
+
+    list.forEach((entry) => {
+        if (removed) {
+            nextList.push(entry);
+            return;
+        }
+        const skillData = entry.skillData || {};
+        const entryName = normalizeBattleText(skillData?.和名 || skillData?.技名 || skillData?.name);
+        const entryType = normalizeBattleText(skillData?.種別).toUpperCase();
+        const typeMatched = !normalizedType || entryType === normalizedType;
+        if (typeMatched && entryName === normalizedName) {
+            removed = true;
+            return;
+        }
+        nextList.push(entry);
+    });
+
+    if (removed) {
+        setRetainedBuffSkillsForCharacter(characterName, nextList);
+    }
+    return { removed, totalCount: nextList.length };
 }
 
 function buildStatSourceWithConditionalBonuses(baseSource, conditionalBonuses = {}) {
@@ -3514,8 +4495,15 @@ function buildSelectedSkillsGlobalFinalRates(options = {}) {
         const skill = selectedSkills?.[slot];
         const skillData = getSkillData(skill);
         if (!skillData || typeof skillData !== "object") return;
+        let targetSkill = skillData;
+        if (Array.isArray(options?.activeConditionalPassives)) {
+            const { calcSkillData } = resolveSkillDataWithConditionalPassives(skillData, {
+                activeConditionalPassives: options.activeConditionalPassives
+            });
+            targetSkill = calcSkillData || skillData;
+        }
         GLOBAL_FINAL_MULTIPLIER_KEYS.forEach((multiplierKey) => {
-            sums[multiplierKey] = (sums[multiplierKey] || 0) + toFiniteNumber(skillData[multiplierKey]);
+            sums[multiplierKey] = (sums[multiplierKey] || 0) + toFiniteNumber(targetSkill[multiplierKey]);
         });
     });
 
@@ -3611,7 +4599,15 @@ function getSelectedSkillsFullPowerTotal(options = {}) {
     SELECTED_SKILL_SLOT_ORDER.forEach((slot) => {
         const skill = selectedSkills?.[slot];
         const skillData = getSkillData(skill);
-        total += toFiniteNumber(skillData?.全力);
+        if (!skillData || typeof skillData !== "object") return;
+        let targetSkill = skillData;
+        if (Array.isArray(options?.activeConditionalPassives)) {
+            const { calcSkillData } = resolveSkillDataWithConditionalPassives(skillData, {
+                activeConditionalPassives: options.activeConditionalPassives
+            });
+            targetSkill = calcSkillData || skillData;
+        }
+        total += toFiniteNumber(targetSkill?.全力);
     });
 
     const aSkillData = getSkillData(selectedSkills?.A);
@@ -4027,6 +5023,21 @@ function getActiveConditionalPassivesForSelectedSkills(targetSelectedSkills = se
     ));
 }
 
+function getRuntimePassiveLikeSkillsForSelectedSkills(
+    targetSelectedSkills = selectedSkills,
+    options = {}
+) {
+    const conditionalPassives = getActiveConditionalPassivesForSelectedSkills(targetSelectedSkills);
+    const characterName = normalizeBattleText(
+        options?.characterName
+        || selectName
+        || playerData?.name
+        || ""
+    );
+    const retainedBuffSkills = getRetainedBuffSkillDataListForCharacter(characterName);
+    return [...conditionalPassives, ...retainedBuffSkills];
+}
+
 function hasConditionalPassiveRequirements(skillData) {
     if (!skillData || typeof skillData !== "object") return false;
     return (
@@ -4154,18 +5165,30 @@ function getMatchedConditionPassiveItemsForSkill(skillData) {
     return buildConditionPassiveModalItems(matchedPassives);
 }
 
-function buildSkillDescriptionContentHtml(skillData) {
+function buildSkillDescriptionContentHtml(skillData, options = {}) {
     const description = String(skillData?.詳細 || skillData?.description || "").trim();
+    const cooldownText = normalizeBattleText(options?.cooldownText);
+    const hasCooldownOverlay = Boolean(cooldownText);
+    const descriptionClass = hasCooldownOverlay
+        ? "skill-description-text skill-description-text-cooldown-faded"
+        : "skill-description-text";
+    const cooldownOverlayHtml = hasCooldownOverlay
+        ? `<span class="skill-cooldown-overlay-text" aria-hidden="true">${cooldownText}</span>`
+        : "";
     const matchedItems = getMatchedConditionPassiveItemsForSkill(skillData);
     if (!matchedItems.length) {
-        return `<span class="skill-description-text">${description}</span>`;
+        return `<span class="${descriptionClass}">${description}</span>${cooldownOverlayHtml}`;
     }
-    return `<span class="skill-description-text">${description}</span>
+    return `<span class="${descriptionClass}">${description}</span>${cooldownOverlayHtml}
         <button type="button" class="skill-passive-open-btn" data-open-condition-passive="1">P${matchedItems.length}</button>`;
 }
 
-function buildSkillDescriptionCellHtml(skillData) {
-    return `<td class="skill-description-cell">${buildSkillDescriptionContentHtml(skillData)}</td>`;
+function buildSkillDescriptionCellHtml(skillData, options = {}) {
+    const cooldownText = normalizeBattleText(options?.cooldownText);
+    const classes = cooldownText
+        ? "skill-description-cell skill-description-cell-cooldown-overlay skill-cooldown-active"
+        : "skill-description-cell";
+    return `<td class="${classes}">${buildSkillDescriptionContentHtml(skillData, { cooldownText })}</td>`;
 }
 
 function bindSkillDescriptionCellButton(row, skillData) {
@@ -4835,6 +5858,7 @@ const SKILL_TABLE_DEFAULT_SORT_DIRECTION = {
     rank: "desc",
     remaining: "desc"
 };
+const SKILL_COOLDOWN_FIELD_KEYS = ["クールタイム", "待機時間"];
 const skillTableSortStateByType = {};
 let skillTableRowGroupSequence = 0;
 let skillTableRowLayoutMode = "image2";
@@ -4885,6 +5909,10 @@ function buildSkillRowSortMeta({
     const sourceSkill = getSkillData(skill) || skill || {};
     const attributeText = normalizeBattleText(displayAttribute ?? sourceSkill?.属性);
     const rankText = normalizeBattleText(getMagicLevelDisplayText(sourceSkill, sourceSkill?.種別));
+    const remainingText = normalizeBattleText(remainingTurnText);
+    const remainingSortValue = remainingText.includes("∞")
+        ? RETAINED_BUFF_INFINITE_TURNS
+        : extractFirstNumberFromSortText(remainingText);
     return {
         name: normalizeBattleText(sourceSkill?.和名 || sourceSkill?.技名 || sourceSkill?.name),
         power: toFiniteNumber(totalPower),
@@ -4892,7 +5920,7 @@ function buildSkillRowSortMeta({
         state: toFiniteNumber(totalState),
         attribute: attributeText.toLowerCase(),
         rank: extractFirstNumberFromSortText(rankText),
-        remaining: extractFirstNumberFromSortText(remainingTurnText),
+        remaining: remainingSortValue,
         description: normalizeBattleText(sourceSkill?.詳細 || sourceSkill?.description).toLowerCase()
     };
 }
@@ -5203,15 +6231,98 @@ function formatSkillMetricText(value) {
     return text || "-";
 }
 
+function parseSkillCooldownFieldValue(source, key) {
+    const target = (source && typeof source === "object") ? source : {};
+    if (!Object.prototype.hasOwnProperty.call(target, key)) {
+        return { hasKey: false, value: 0 };
+    }
+    const raw = target[key];
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+        return { hasKey: true, value: numeric };
+    }
+    const text = normalizeBattleText(raw);
+    if (!text) {
+        return { hasKey: true, value: 0 };
+    }
+    const matched = text.match(/-?\d+(?:\.\d+)?/);
+    if (!matched) {
+        return { hasKey: true, value: 0 };
+    }
+    return { hasKey: true, value: Number(matched[0]) };
+}
+
+function getSkillCooldownFromData(skillData) {
+    const source = (skillData && typeof skillData === "object") ? skillData : {};
+    for (const key of SKILL_COOLDOWN_FIELD_KEYS) {
+        const parsed = parseSkillCooldownFieldValue(source, key);
+        if (parsed.hasKey) {
+            return { hasValue: true, value: parsed.value };
+        }
+    }
+    return { hasValue: false, value: 0 };
+}
+
+function normalizeCooldownTurnValue(value) {
+    return Math.max(0, Math.round(toFiniteNumber(value)));
+}
+
+function getSkillTableCooldownGlobalBonus() {
+    const currentName = normalizeBattleText(selectName || playerData?.name || "");
+    let source = null;
+    if (currentName && Array.isArray(characterList)) {
+        source = characterList.find((entry) => normalizeBattleText(entry?.name) === currentName) || null;
+    }
+    if (!source) {
+        source = playerData && typeof playerData === "object" ? playerData : null;
+    }
+    const bonuses = (source && typeof source.skillBonuses === "object") ? source.skillBonuses : {};
+    return SKILL_COOLDOWN_FIELD_KEYS.reduce((sum, key) => sum + toFiniteNumber(bonuses?.[key]), 0);
+}
+
+function buildSkillCooldownDisplayText({
+    skill = null,
+    originalSkill = null,
+    tableType = "",
+    retainedBuffActive = false
+} = {}) {
+    if (String(tableType || "").toUpperCase() === "ACTIVE") {
+        return "";
+    }
+
+    const sourceSkill = getSkillData(originalSkill) || getSkillData(skill) || originalSkill || skill;
+    if (!sourceSkill || typeof sourceSkill !== "object") {
+        return "";
+    }
+
+    const signature = getSkillCooldownSignature(sourceSkill);
+    if (!signature) return "";
+    const entry = getSkillCooldownEntryBySignature(signature, selectName || playerData?.name || "");
+    if (!entry) return "";
+
+    // 発動中スキルは表示しない（解除されたら表示する）。
+    if (retainedBuffActive) {
+        return "";
+    }
+
+    const remainingTurns = normalizeCooldownTurnValue(entry?.remainingTurns);
+    const totalTurns = normalizeCooldownTurnValue(entry?.totalTurns);
+    if (remainingTurns <= 0 || totalTurns <= 0) return "";
+    return `${remainingTurns}/${totalTurns}`;
+}
+
 function buildSkillTableRowHtml({
     skill,
+    originalSkill,
     tableType,
     displaySource,
     totalPower,
     totalDefense,
     totalState,
     displayAttribute,
-    remainingTurnText = ""
+    remainingTurnText = "",
+    retainedBuffActive = false,
+    cooldownText = ""
 }) {
     const skillName = skill?.和名 || "";
     const skillRuby = skill?.英名 || "";
@@ -5239,19 +6350,21 @@ function buildSkillTableRowHtml({
         <td>${attributeText || "-"}</td>
         <td>${getMagicLevelDisplayText(skill, skill?.種別)}</td>
         ${remainingCellHtml}
-        ${buildSkillDescriptionCellHtml(skill)}
+        ${buildSkillDescriptionCellHtml(skill, { cooldownText })}
     `;
 }
 
 function buildSkillTableRows({
     skill,
+    originalSkill,
     tableType,
     displaySource,
     totalPower,
     totalDefense,
     totalState,
     displayAttribute,
-    remainingTurnText = ""
+    remainingTurnText = "",
+    retainedBuffActive = false
 }) {
     const rowLayout = getSkillTableRowLayout(tableType);
     const skillName = skill?.和名 || "";
@@ -5262,6 +6375,12 @@ function buildSkillTableRows({
     const onClick = `handleSkillClick('${skill?.種別 || ""}', '${skillName}', '${displaySource}')`;
     const nameHtml = `<ruby>${skillName}<rt>${skillRuby}</rt></ruby>`;
     const rText = getMagicLevelDisplayText(skill, skill?.種別) || "-";
+    const cooldownText = buildSkillCooldownDisplayText({
+        skill,
+        originalSkill,
+        tableType,
+        retainedBuffActive
+    });
     const attributeText = String(displayAttribute ?? skill?.属性 ?? "").trim() || "-";
     const attributeTextLength = [...attributeText].length;
     const remainingText = String(remainingTurnText || "").trim() || "-";
@@ -5270,13 +6389,16 @@ function buildSkillTableRows({
         const row = document.createElement("tr");
         row.innerHTML = buildSkillTableRowHtml({
             skill,
+            originalSkill,
             tableType,
             displaySource,
             totalPower,
             totalDefense,
             totalState,
             displayAttribute,
-            remainingTurnText
+            remainingTurnText,
+            retainedBuffActive,
+            cooldownText
         });
         return [row];
     }
@@ -5285,6 +6407,9 @@ function buildSkillTableRows({
     const remainingMetricHtml = tableType === "ACTIVE"
         ? `<td class="skill-type2-metric-cell skill-active-remaining-cell">${remainingText}</td>`
         : "";
+    const descriptionCellClass = cooldownText
+        ? "skill-description-cell skill-description-cell-cooldown-overlay skill-cooldown-active"
+        : "skill-description-cell";
     const nameRow = document.createElement("tr");
     nameRow.className = "skill-type2-name-row";
     nameRow.innerHTML = `
@@ -5294,7 +6419,7 @@ function buildSkillTableRows({
             <span class="skill-name-inline">${nameHtml}</span>
         </td>
         <td class="skill-type2-desc-cell" colspan="3" rowspan="2">
-            <div class="skill-description-cell">${buildSkillDescriptionContentHtml(skill)}</div>
+            <div class="${descriptionCellClass}">${buildSkillDescriptionContentHtml(skill, { cooldownText })}</div>
         </td>
     `;
 
@@ -5331,14 +6456,25 @@ function appendSkillRowsToTable({
     const highlightSourceSkill = getSkillData(originalSkill || skill);
     const rows = buildSkillTableRows({
         skill,
+        originalSkill,
         tableType,
         displaySource,
         totalPower,
         totalDefense,
         totalState,
         displayAttribute,
-        remainingTurnText
+        remainingTurnText,
+        retainedBuffActive
     });
+    const cooldownTextForRows = buildSkillCooldownDisplayText({
+        skill,
+        originalSkill,
+        tableType,
+        retainedBuffActive
+    });
+    if (cooldownTextForRows) {
+        rows.forEach((row) => row.classList.add("skill-cooldown-active"));
+    }
     const sortMeta = buildSkillRowSortMeta({
         skill: highlightSourceSkill || skill,
         totalPower,
@@ -5482,13 +6618,22 @@ function getMagicLevelForMultiplier(skill, typeHint = "", slotHint = "") {
 function getRetainedBuffDisplayEntries(name = (selectName || playerData?.name || "")) {
     return getRetainedBuffSkillsForCharacter(name)
         .map((entry) => normalizeRetainedBuffEntry(entry))
-        .filter((entry) => entry && entry.skillData && toFiniteNumber(entry.remainingTurns) > 0);
+        .filter((entry) => {
+            if (!entry || !entry.skillData || toFiniteNumber(entry.remainingTurns) <= 0) return false;
+            const skillName = normalizeBattleText(
+                entry?.skillData?.和名 || entry?.skillData?.技名 || entry?.skillData?.name
+            );
+            return Boolean(skillName);
+        });
 }
 
 function getActiveRemainingTurnText(entry) {
     const normalized = normalizeRetainedBuffEntry(entry);
-    const remaining = Math.max(0, Math.round(toFiniteNumber(normalized?.remainingTurns) || 0));
-    const total = Math.max(1, Math.round(toFiniteNumber(normalized?.totalTurns) || 1));
+    const remaining = normalizeRetainedBuffTurns(normalized?.remainingTurns, 1);
+    const total = normalizeRetainedBuffTurns(normalized?.totalTurns, 1);
+    if (isInfiniteRetainedBuffTurns(remaining) || isInfiniteRetainedBuffTurns(total)) {
+        return "∞";
+    }
     return `${remaining}/${total}`;
 }
 
@@ -5515,7 +6660,19 @@ function isRetainedBuffSkillActive(skillData, activeBuffSignatureSet) {
 }
 
 function displayActiveBuffSkills() {
-    const activeEntries = getRetainedBuffDisplayEntries(selectName || playerData?.name || "");
+    const currentCharacterName = selectName || playerData?.name || "";
+    hydrateRetainedBuffSkillsForCharacter(currentCharacterName, playerData);
+    const activeEntries = getRetainedBuffDisplayEntries(currentCharacterName);
+    DebaglogSet("[BattleState][ActiveDisplay]", {
+        characterName: normalizeBattleText(currentCharacterName),
+        entryCount: activeEntries.length,
+        entries: activeEntries.map((entry) => ({
+            name: normalizeBattleText(entry?.skillData?.和名 || entry?.skillData?.技名 || entry?.skillData?.name),
+            type: normalizeBattleText(entry?.skillData?.種別 || ""),
+            remaining: normalizeRetainedBuffTurns(entry?.remainingTurns, 1),
+            total: normalizeRetainedBuffTurns(entry?.totalTurns, 1)
+        }))
+    });
     if (!activeEntries.length) return;
 
     const powerKeys = [
@@ -5532,7 +6689,9 @@ function displayActiveBuffSkills() {
     ];
     const defenseKeys = ["物理ガード", "魔法ガード"];
 
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -5563,7 +6722,7 @@ function displayActiveBuffSkills() {
                 skill: preview.calcSkillData || sourceSkill,
                 originalSkill: sourceSkill,
                 tableType: "ACTIVE",
-                displaySource: "skills",
+                displaySource: "active",
                 totalPower: toFiniteNumber(preview.powerValue),
                 totalDefense: toFiniteNumber(preview.guardValue),
                 totalState: toFiniteNumber(preview.stateValue),
@@ -5598,7 +6757,7 @@ function displayActiveBuffSkills() {
             skill: sourceSkill,
             originalSkill: sourceSkill,
             tableType: "ACTIVE",
-            displaySource: "skills",
+            displaySource: "active",
             totalPower: Math.ceil(parseInt(totalPower) * uper),
             totalDefense: Math.ceil(parseInt(totalDefense) * uper),
             totalState: Math.ceil(parseInt(totalState) * uper),
@@ -5627,7 +6786,9 @@ function displaySkills(setSkill) {
         "呪い/防御", "呪い/魔力", "呪い/魔防", "呪い/速度", "呪い/命中", "支配",
         "即死", "時間", "出血", "疲労", "ノックバック"
     ];
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -5811,7 +6972,9 @@ function displayMagics(setMagics) {
         "呪い/防御", "呪い/魔力", "呪い/魔防", "呪い/速度", "呪い/命中", "支配",
         "即死", "時間", "出血", "疲労", "ノックバック"
     ];
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -6125,7 +7288,9 @@ function buildSkillSetModalRowMetricBreakdown({
 
 function buildSkillSetModalRows() {
     const slotOrder = ["A", "S", "Q1", "Q2", "M"];
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -6855,6 +8020,19 @@ window.openSkillSetSendModal = openSkillSetSendModal;
 // 現状 playerData からしか取得していないので技が入力されない。
 // スキルをクリックした際の処理
 async function handleSkillClick(type, name, displaySource = "skills") {
+    const sourceTag = normalizeBattleText(displaySource).toLowerCase();
+    if (sourceTag === "active") {
+        const characterName = selectName || playerData?.name || "";
+        const confirmed = await askConfirmAsync(`発動中スキル「${name}」を解除しますか？`);
+        if (!confirmed) return;
+        const result = removeRetainedBuffSkillByTypeAndName(type, name, characterName);
+        if (!result?.removed) return;
+        await refreshTopRightStatusContainer();
+        await updateSelectedSkills();
+        await rerenderSkillTables();
+        return;
+    }
+
     selectedType = type;
     const fetchedSkills = await fetchSkillsByName(name);
     const fetchedSkillList = Array.isArray(fetchedSkills)
@@ -6960,7 +8138,9 @@ function selectSkill(slotKey, setSkill) {
     selectedSkills[slotKey] = setSkill;
     syncSelectedSkillsToCurrentCharacter();
     DebaglogSet("スキルを選択してスロットにセット selectedSkills:", selectedSkills);
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -7012,7 +8192,9 @@ async function updateSelectedSkills() {
     let totalCritPower = 0;
     let totalMinDamage = 0;
     let hasAnyExtra = false;
-    const activeConditionalPassives = getActiveConditionalPassivesForSelectedSkills(selectedSkills);
+    const activeConditionalPassives = getRuntimePassiveLikeSkillsForSelectedSkills(selectedSkills, {
+        characterName: selectName || playerData?.name || ""
+    });
     const conditionalPassiveStatusBonuses = buildRuntimeStatusBonuses({
         activeConditionalPassives,
         characterName: selectName || playerData?.name || ""
@@ -7510,6 +8692,43 @@ async function advanceTurn() {
     const name = normalizeBattleText(selectName || playerData?.name || "");
     if (!name) return;
 
+    if (typeof window.openTurnAdvanceModalVue === "function") {
+        const result = await window.openTurnAdvanceModalVue({
+            characterName: name,
+            currentTurn: getBattleTurnForCharacter(name),
+            defaultElapsedTurns: 1
+        });
+        if (!result || typeof result !== "object") return;
+        if (result.action === "reset") {
+            await resetBattleTurn(name, result.turn);
+            return;
+        }
+        await advanceBattleTurnByCount(name, result.elapsedTurns);
+        return;
+    }
+
+    await advanceBattleTurnByCount(name, 1);
+}
+
+async function advanceBattleTurnByCount(characterName = (selectName || playerData?.name || ""), elapsedTurns = 1) {
+    const name = normalizeBattleText(characterName);
+    if (!name) return;
+    const steps = Math.max(1, Math.round(toFiniteNumber(elapsedTurns) || 1));
+
+    for (let index = 0; index < steps; index += 1) {
+        applySingleBattleTurnAdvance(name);
+    }
+
+    updateBattleTurnDisplay(name);
+    await refreshTopRightStatusContainer();
+    await updateSelectedSkills();
+    await rerenderSkillTables();
+}
+
+function applySingleBattleTurnAdvance(characterName = (selectName || playerData?.name || "")) {
+    const name = normalizeBattleText(characterName);
+    if (!name) return;
+
     const nextTurn = getBattleTurnForCharacter(name) + 1;
     setBattleTurnForCharacter(name, nextTurn);
     const retained = getRetainedBuffSkillsForCharacter(name)
@@ -7517,8 +8736,16 @@ async function advanceTurn() {
         .filter((entry) => entry && entry.skillData);
     const stillActive = retained
         .map((entry) => {
-            const remaining = Math.max(0, Math.round(toFiniteNumber(entry?.remainingTurns) || 0));
-            const total = Math.max(1, Math.round(toFiniteNumber(entry?.totalTurns) || 1));
+            const remaining = normalizeRetainedBuffTurns(entry?.remainingTurns, 1);
+            const total = normalizeRetainedBuffTurns(entry?.totalTurns, 1);
+            if (isInfiniteRetainedBuffTurns(remaining) || isInfiniteRetainedBuffTurns(total)) {
+                return {
+                    skillData: { ...(entry?.skillData || {}) },
+                    hasEffectDuration: true,
+                    totalTurns: RETAINED_BUFF_INFINITE_TURNS,
+                    remainingTurns: RETAINED_BUFF_INFINITE_TURNS
+                };
+            }
             const nextRemaining = Math.max(0, remaining - 1);
             if (nextRemaining <= 0) return null;
             return {
@@ -7530,8 +8757,16 @@ async function advanceTurn() {
         })
         .filter((entry) => entry && entry.skillData);
     setRetainedBuffSkillsForCharacter(name, stillActive);
-    updateBattleTurnDisplay(name);
+    advanceSkillCooldownsForCharacter(name);
+}
 
+async function resetBattleTurn(characterName = (selectName || playerData?.name || ""), turn = 1) {
+    const name = normalizeBattleText(characterName);
+    if (!name) return;
+    setBattleTurnForCharacter(name, turn);
+    clearRetainedBuffSkillsForCharacter(name);
+    setSkillCooldownEntriesForCharacter(name, []);
+    updateBattleTurnDisplay(name);
     await refreshTopRightStatusContainer();
     await updateSelectedSkills();
     await rerenderSkillTables();
@@ -9256,13 +10491,25 @@ function applyResourceConsumptionToCharacter(character, consumption) {
 
 function syncDamageToCharacterListByName(characterName, damage) {
     const name = normalizeBattleText(characterName);
-    if (!name || !Array.isArray(characterList)) return;
-    const target = characterList.find((entry) => normalizeBattleText(entry?.name) === name);
-    if (!target) return;
-    const targetDamage = ensureCharacterDamageObject(target);
-    targetDamage.HP_消費 = Math.round(toFiniteNumber(damage?.HP_消費));
-    targetDamage.MP_消費 = Math.round(toFiniteNumber(damage?.MP_消費));
-    targetDamage.ST_消費 = Math.round(toFiniteNumber(damage?.ST_消費));
+    if (!name) return;
+
+    const normalizedDamage = setDamageStateForCharacter(name, damage);
+    const applyDamageToCharacter = (character) => {
+        if (!character || normalizeBattleText(character?.name) !== name) return;
+        const targetDamage = ensureCharacterDamageObject(character);
+        targetDamage.HP_消費 = normalizedDamage.HP_消費;
+        targetDamage.MP_消費 = normalizedDamage.MP_消費;
+        targetDamage.ST_消費 = normalizedDamage.ST_消費;
+    };
+
+    if (Array.isArray(characterList)) {
+        const target = characterList.find((entry) => normalizeBattleText(entry?.name) === name);
+        applyDamageToCharacter(target);
+    }
+    applyDamageToCharacter(playerData);
+    applyDamageToCharacter(window.statusCharacter);
+
+    queueBattleStateSaveForCharacter(name);
 }
 
 async function refreshCharacterCardsAfterConsumption() {
@@ -9334,15 +10581,22 @@ async function sendData(diceCount, diceMax) {
     };
 
     const retainedResult = retainUsedBuffSkillsFromSelection(selectedSkills, playerData?.name || selectName || "");
+    const cooldownResult = retainUsedSkillCooldownsFromSelection(selectedSkills, playerData?.name || selectName || "");
     dataToSend.retainedBuff = {
         added: Math.max(0, Math.round(toFiniteNumber(retainedResult?.addedCount))),
         refreshed: Math.max(0, Math.round(toFiniteNumber(retainedResult?.refreshedCount))),
         total: Math.max(0, Math.round(toFiniteNumber(retainedResult?.totalCount)))
     };
+    dataToSend.cooldown = {
+        started: Math.max(0, Math.round(toFiniteNumber(cooldownResult?.startedCount))),
+        total: Math.max(0, Math.round(toFiniteNumber(cooldownResult?.totalCount)))
+    };
     if (
         toFiniteNumber(retainedResult?.addedCount) > 0
         || toFiniteNumber(retainedResult?.refreshedCount) > 0
+        || toFiniteNumber(cooldownResult?.startedCount) > 0
     ) {
+        await saveBattleStateForCharacterNow(playerData?.name || selectName || "");
         await refreshTopRightStatusContainer();
         await updateSelectedSkills();
         await rerenderSkillTables();

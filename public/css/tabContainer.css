@@ -1314,7 +1314,7 @@
     justify-content: space-between; /* 横並びで両端寄せ */
     gap: 2%; /* 横方向の間隔 */
     margin-top: 5px;
-    height: clamp(470px, 56vh, 520px);
+    height: 495px;
 }
 
 

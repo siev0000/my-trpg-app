@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "updatedAt": "2026-04-13T13:46:50.535Z",
+  "states": {
+    "siev": {
+      "ドゥンケルハイト": {
+        "battleTurn": 1,
+        "retainedBuffSkills": [],
+        "skillCooldowns": [],
+        "damage": {
+          "HP_消費": 0,
+          "MP_消費": 0,
+          "ST_消費": 0
+        }
+      },
+      "リコリス": {
+        "battleTurn": 1,
+        "retainedBuffSkills": [],
+        "skillCooldowns": [],
+        "damage": {
+          "HP_消費": 0,
+          "MP_消費": 0,
+          "ST_消費": 0
+        }
+      }
+    }
+  }
+}

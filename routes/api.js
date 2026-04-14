@@ -16,6 +16,8 @@ const selectDataLogPath = path.join(logsDirPath, 'select_dataLog.txt');
 const battleMemoJsonPath = path.join(logsDirPath, 'battle-memo.json');
 const characterProfileJsonPath = path.join(logsDirPath, 'character-profiles.json');
 const skillSetPresetJsonPath = path.join(logsDirPath, 'skill-set-presets.json');
+const battleStateJsonPath = path.join(logsDirPath, 'battle-state.json');
+const RETAINED_BUFF_INFINITE_TURNS = 9999999;
 const skillSetIconDirName = '攻撃手段';
 const skillSetIconDirPath = path.join(process.cwd(), 'public', 'images', skillSetIconDirName);
 const MEMO_PROFILE_TAB_ID = '__profile__';
@@ -607,6 +609,169 @@ function writeSkillSetPresetStore(store) {
     const tempPath = `${skillSetPresetJsonPath}.tmp`;
     fs.writeFileSync(tempPath, `${JSON.stringify(normalizedStore, null, 2)}\n`, 'utf8');
     fs.renameSync(tempPath, skillSetPresetJsonPath);
+}
+
+function normalizeBattleStateDamageEntry(entry = {}) {
+    const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+    return {
+        HP_消費: Math.max(0, Math.min(100, Math.round(Number(source?.HP_消費) || 0))),
+        MP_消費: Math.max(0, Math.round(Number(source?.MP_消費) || 0)),
+        ST_消費: Math.max(0, Math.round(Number(source?.ST_消費) || 0))
+    };
+}
+
+function normalizeBattleStateRetainedBuffEntry(entry = {}) {
+    const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : null;
+    if (!source) return null;
+
+    const rawSkillData = (
+        source.skillData
+        && typeof source.skillData === 'object'
+        && !Array.isArray(source.skillData)
+    )
+        ? source.skillData
+        : source;
+    const skillData = rawSkillData && typeof rawSkillData === 'object' && !Array.isArray(rawSkillData)
+        ? rawSkillData
+        : {};
+    const compactSkillName = normalizeText(source?.skillName || source?.name);
+    const compactSkillType = normalizeText(source?.skillType || source?.type);
+    const skillName = compactSkillName || normalizeText(skillData?.和名 || skillData?.技名 || skillData?.name);
+    const skillType = compactSkillType || normalizeText(skillData?.種別);
+    if (!skillName) return null;
+
+    const humanTransformName = skillName;
+    const isHumanTransform = Boolean(humanTransformName) && (
+        humanTransformName === '人間変身' || humanTransformName.includes('人間変身')
+    );
+
+    const hasEffectDuration = Boolean(source?.hasEffectDuration);
+    const fallbackTurns = hasEffectDuration ? 2 : 1;
+    const normalizeTurns = (value, fallback = 1) => {
+        const resolved = Math.max(1, Math.round(Number(value) || fallback));
+        if (resolved >= RETAINED_BUFF_INFINITE_TURNS) {
+            return RETAINED_BUFF_INFINITE_TURNS;
+        }
+        return resolved;
+    };
+    const totalTurns = isHumanTransform
+        ? RETAINED_BUFF_INFINITE_TURNS
+        : normalizeTurns(source?.totalTurns, fallbackTurns);
+    const remainingTurnsRaw = Number.isFinite(Number(source?.remainingTurns))
+        ? Number(source?.remainingTurns)
+        : (totalTurns - Number(source?.elapsedTurns || 0));
+    const remainingTurns = isHumanTransform
+        ? RETAINED_BUFF_INFINITE_TURNS
+        : normalizeTurns(remainingTurnsRaw, totalTurns);
+    if (remainingTurns <= 0) return null;
+    const elapsedTurns = totalTurns >= RETAINED_BUFF_INFINITE_TURNS
+        ? 0
+        : Math.max(0, totalTurns - remainingTurns);
+
+    return {
+        skillName,
+        skillType,
+        totalTurns,
+        elapsedTurns
+    };
+}
+
+function normalizeBattleStateCharacterEntry(entry = {}) {
+    const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+    const retainedBuffSkills = (Array.isArray(source?.retainedBuffSkills) ? source.retainedBuffSkills : [])
+        .map((buff) => normalizeBattleStateRetainedBuffEntry(buff))
+        .filter((buff) => Boolean(buff));
+    const skillCooldowns = (Array.isArray(source?.skillCooldowns) ? source.skillCooldowns : [])
+        .map((row) => {
+            const item = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+            const signature = normalizeText(item?.signature);
+            const signatureParts = signature ? signature.split('::') : [];
+            const skillType = normalizeText(item?.skillType || item?.type || signatureParts[0] || '');
+            const skillName = normalizeText(item?.skillName || item?.name || signatureParts[1] || '');
+            if (!skillName) return null;
+            const totalTurns = Math.max(0, Math.round(Number(item?.cooldownTurns ?? item?.totalTurns) || 0));
+            const remainingTurnsRaw = Number.isFinite(Number(item?.remainingTurns))
+                ? Number(item?.remainingTurns)
+                : (totalTurns - Number(item?.elapsedTurns || 0));
+            const remainingTurns = Math.max(0, Math.round(remainingTurnsRaw || 0));
+            if (totalTurns <= 0 || remainingTurns <= 0) return null;
+            const elapsedTurns = Math.max(0, totalTurns - remainingTurns);
+            return {
+                skillName,
+                skillType,
+                cooldownTurns: totalTurns,
+                elapsedTurns,
+                pendingWhileActive: Boolean(item?.pendingWhileActive)
+            };
+        })
+        .filter((row) => Boolean(row));
+
+    return {
+        battleTurn: Math.max(1, Math.round(Number(source?.battleTurn) || 1)),
+        retainedBuffSkills,
+        skillCooldowns,
+        damage: normalizeBattleStateDamageEntry(source?.damage)
+    };
+}
+
+function normalizeBattleStateCharacterCollection(collection = {}) {
+    const source = collection && typeof collection === 'object' && !Array.isArray(collection) ? collection : {};
+    const normalized = {};
+    Object.entries(source).forEach(([characterName, entry]) => {
+        const key = normalizeText(characterName);
+        if (!key) return;
+        normalized[key] = normalizeBattleStateCharacterEntry(entry);
+    });
+    return normalized;
+}
+
+function normalizeBattleStateStoreStates(states = {}) {
+    const source = states && typeof states === 'object' && !Array.isArray(states) ? states : {};
+    const normalized = {};
+    Object.entries(source).forEach(([playerId, collection]) => {
+        const key = normalizeText(playerId);
+        if (!key) return;
+        normalized[key] = normalizeBattleStateCharacterCollection(collection);
+    });
+    return normalized;
+}
+
+function readBattleStateStore() {
+    if (!fs.existsSync(battleStateJsonPath)) {
+        return { version: 1, updatedAt: null, states: {} };
+    }
+
+    const raw = fs.readFileSync(battleStateJsonPath, 'utf8');
+    if (!String(raw || '').trim()) {
+        return { version: 1, updatedAt: null, states: {} };
+    }
+
+    const parsed = JSON.parse(raw);
+    const normalizedStates = normalizeBattleStateStoreStates(parsed?.states);
+    const normalizedStore = {
+        version: 1,
+        updatedAt: parsed?.updatedAt || null,
+        states: normalizedStates
+    };
+    const before = JSON.stringify(parsed?.states || {});
+    const after = JSON.stringify(normalizedStates || {});
+    if (before !== after) {
+        writeBattleStateStore(normalizedStore);
+    }
+    return normalizedStore;
+}
+
+function writeBattleStateStore(store) {
+    const normalizedStore = {
+        version: 1,
+        updatedAt: store?.updatedAt || new Date().toISOString(),
+        states: normalizeBattleStateStoreStates(store?.states)
+    };
+
+    fs.mkdirSync(path.dirname(battleStateJsonPath), { recursive: true });
+    const tempPath = `${battleStateJsonPath}.tmp`;
+    fs.writeFileSync(tempPath, `${JSON.stringify(normalizedStore, null, 2)}\n`, 'utf8');
+    fs.renameSync(tempPath, battleStateJsonPath);
 }
 
 function dedupeBy(items, selector) {
@@ -1337,6 +1502,72 @@ router.post('/skill-set/rename', (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'failed to rename skill-set preset'
+        });
+    }
+});
+
+router.post('/battle-state/load', (req, res) => {
+    try {
+        const playerId = normalizeText(req.body?.playerId) || 'guest';
+        const requestedCharacterNames = (Array.isArray(req.body?.characterNames) ? req.body.characterNames : [])
+            .map((name) => normalizeText(name))
+            .filter(Boolean);
+        const requestedSet = new Set(requestedCharacterNames);
+
+        const store = readBattleStateStore();
+        const playerStates = normalizeBattleStateCharacterCollection(store?.states?.[playerId] || {});
+
+        const states = requestedSet.size > 0
+            ? Object.fromEntries(
+                Object.entries(playerStates).filter(([characterName]) => requestedSet.has(characterName))
+            )
+            : playerStates;
+
+        return res.status(200).json({
+            success: true,
+            updatedAt: store?.updatedAt || null,
+            states
+        });
+    } catch (error) {
+        console.error('battle-state load error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'failed to load battle state'
+        });
+    }
+});
+
+router.post('/battle-state/save', (req, res) => {
+    try {
+        const playerId = normalizeText(req.body?.playerId) || 'guest';
+        const characterName = normalizeText(req.body?.characterName);
+        if (!characterName) {
+            return res.status(400).json({
+                success: false,
+                message: 'characterName is required'
+            });
+        }
+
+        const store = readBattleStateStore();
+        if (!store.states[playerId] || typeof store.states[playerId] !== 'object') {
+            store.states[playerId] = {};
+        }
+
+        const normalizedState = normalizeBattleStateCharacterEntry(req.body?.state || {});
+        store.states[playerId][characterName] = normalizedState;
+        store.updatedAt = new Date().toISOString();
+        writeBattleStateStore(store);
+
+        return res.status(200).json({
+            success: true,
+            updatedAt: store.updatedAt,
+            state: normalizedState
+        });
+    } catch (error) {
+        console.error('battle-state save error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'failed to save battle state'
         });
     }
 });

@@ -41,6 +41,7 @@
             <EquipCompareModal />
             <ResourceAdjustModal />
             <DetailModal />
+            <TurnAdvanceModal />
         </div>
     </div>
 </template>
@@ -51,6 +52,7 @@ import ConditionPassiveModal from './components/ConditionPassiveModal.vue';
 import SkillSetModal from './components/SkillSetModal.vue';
 import EquipCompareModal from './components/EquipCompareModal.vue';
 import ResourceAdjustModal from './components/ResourceAdjustModal.vue';
+import TurnAdvanceModal from './components/TurnAdvanceModal.vue';
 import { installGlobalModalInteractionGuard, triggerPostModalInteractionGuard } from './utils/modalInteractionGuard.js';
 
 export default {
@@ -61,6 +63,7 @@ export default {
         SkillSetModal,
         EquipCompareModal,
         ResourceAdjustModal
+        ,TurnAdvanceModal
     },
     data() {
         return {
