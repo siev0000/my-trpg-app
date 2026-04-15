@@ -19,14 +19,25 @@ let activeCharacterRowElement = null;
 let totalCharacterCount = 0;
 let activeSidebarTabId = "status";
 let activeStatusViewMode = "table";
+let currentPlayerId = "";
+let currentPlayerCharacterList = [];
+let presenceHeartbeatTimer = null;
+let gmDashboardPollTimer = null;
+let gmDashboardToken = "";
 
 const loginButton = document.getElementById("login-button");
 const startStoryButtonElement = document.getElementById("start-story-button");
 const characterSelectCountElement = document.getElementById("character-select-count");
 const loginContainerElement = document.getElementById("login-container");
 const mainContainerElement = document.getElementById("main-container");
+const gmContainerElement = document.getElementById("gm-container");
 const usernameInputElement = document.getElementById("username");
 const passwordInputElement = document.getElementById("password");
+const gmLogoutButtonElement = document.getElementById("gm-logout-button");
+const gmPresenceMetaElement = document.getElementById("gm-presence-meta");
+const gmPresenceListElement = document.getElementById("gm-presence-list");
+const gmLogMetaElement = document.getElementById("gm-log-meta");
+const gmLogContentElement = document.getElementById("gm-log-content");
 const characterSidebarTabElements = Array.from(document.querySelectorAll(".character-sidebar-tab"));
 const characterSidebarPanelElements = Array.from(document.querySelectorAll(".character-sidebar-panel"));
 const characterStatusViewTabElements = Array.from(document.querySelectorAll(".character-status-view-tab"));
@@ -64,15 +75,28 @@ function setCharacterSidebarTitle(characterName = "") {
 function showLoginView() {
     document.body.classList.add("login-view");
     document.body.classList.remove("main-view");
+    document.body.classList.remove("gm-view");
     if (mainContainerElement) mainContainerElement.classList.add("is-hidden");
+    if (gmContainerElement) gmContainerElement.classList.add("is-hidden");
     if (loginContainerElement) loginContainerElement.style.display = "flex";
 }
 
 function showMainView() {
     document.body.classList.remove("login-view");
+    document.body.classList.remove("gm-view");
     document.body.classList.add("main-view");
     if (loginContainerElement) loginContainerElement.style.display = "none";
+    if (gmContainerElement) gmContainerElement.classList.add("is-hidden");
     if (mainContainerElement) mainContainerElement.classList.remove("is-hidden");
+}
+
+function showGmView() {
+    document.body.classList.remove("login-view");
+    document.body.classList.remove("main-view");
+    document.body.classList.add("gm-view");
+    if (loginContainerElement) loginContainerElement.style.display = "none";
+    if (mainContainerElement) mainContainerElement.classList.add("is-hidden");
+    if (gmContainerElement) gmContainerElement.classList.remove("is-hidden");
 }
 
 function setLoginButtonBusy(isBusy) {
@@ -213,6 +237,202 @@ function attachMemoBundlesToCharacters(characters = [], memoBundleMap = {}) {
     });
 }
 
+function formatDisplayTime(isoText) {
+    const date = new Date(isoText);
+    if (Number.isNaN(date.getTime())) return "不明";
+    return date.toLocaleString("ja-JP", { hour12: false });
+}
+
+function setLoginErrorMessage(message = "") {
+    const errorMessage = document.getElementById("error-message");
+    if (!errorMessage) return;
+    const text = String(message || "").trim();
+    if (!text) {
+        errorMessage.style.display = "none";
+        errorMessage.textContent = "";
+        return;
+    }
+    errorMessage.textContent = text;
+    errorMessage.style.display = "block";
+}
+
+async function postJson(url, payload = {}) {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    let data = null;
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = null;
+    }
+    return { response, data };
+}
+
+function stopPresenceHeartbeat() {
+    if (presenceHeartbeatTimer) {
+        clearInterval(presenceHeartbeatTimer);
+        presenceHeartbeatTimer = null;
+    }
+}
+
+async function sendPresenceHeartbeat() {
+    if (!currentPlayerId) return;
+    try {
+        await postJson("/api/presence/heartbeat", {
+            playerId: currentPlayerId,
+            characterNames: currentPlayerCharacterList
+        });
+    } catch (error) {
+        console.warn("[presence] heartbeat failed:", error);
+    }
+}
+
+function startPresenceHeartbeat(playerId, characterNames = []) {
+    currentPlayerId = normalizeNameText(playerId);
+    currentPlayerCharacterList = (Array.isArray(characterNames) ? characterNames : [])
+        .map((name) => normalizeNameText(name))
+        .filter(Boolean);
+    stopPresenceHeartbeat();
+    if (!currentPlayerId) return;
+    sendPresenceHeartbeat();
+    presenceHeartbeatTimer = window.setInterval(sendPresenceHeartbeat, 30 * 1000);
+}
+
+function sendPresenceDisconnectBeacon() {
+    if (!currentPlayerId) return;
+    const payload = JSON.stringify({ playerId: currentPlayerId });
+    try {
+        if (navigator.sendBeacon) {
+            const body = new Blob([payload], { type: "application/json" });
+            navigator.sendBeacon("/api/presence/disconnect", body);
+            return;
+        }
+    } catch (error) {
+        console.warn("[presence] sendBeacon failed:", error);
+    }
+}
+
+function stopGmDashboardPolling() {
+    if (gmDashboardPollTimer) {
+        clearInterval(gmDashboardPollTimer);
+        gmDashboardPollTimer = null;
+    }
+}
+
+function renderGmPresenceList(players = []) {
+    if (!gmPresenceListElement) return;
+    gmPresenceListElement.innerHTML = "";
+
+    if (!Array.isArray(players) || players.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "gm-empty";
+        empty.textContent = "接続中プレイヤーはありません。";
+        gmPresenceListElement.appendChild(empty);
+        return;
+    }
+
+    players.forEach((player) => {
+        const card = document.createElement("section");
+        card.className = "gm-player-card";
+
+        const title = document.createElement("h4");
+        title.textContent = player?.playerId || "unknown";
+        card.appendChild(title);
+
+        const seenAt = document.createElement("p");
+        seenAt.className = "gm-player-seen-at";
+        seenAt.textContent = `最終更新: ${formatDisplayTime(player?.lastSeenAt)}`;
+        card.appendChild(seenAt);
+
+        const characters = Array.isArray(player?.characters) ? player.characters : [];
+        if (characters.length === 0) {
+            const empty = document.createElement("p");
+            empty.className = "gm-empty";
+            empty.textContent = "キャラクター情報なし";
+            card.appendChild(empty);
+        } else {
+            const list = document.createElement("ul");
+            list.className = "gm-character-list";
+            characters.forEach((character) => {
+                const item = document.createElement("li");
+                const name = normalizeNameText(character?.名前 || character?.name || "不明");
+                const level = character?.Lv ?? "-";
+                const hp = character?.HP ?? "-";
+                const mp = character?.MP ?? "-";
+                const st = character?.ST ?? "-";
+                item.textContent = `${name} Lv:${level} HP:${hp} MP:${mp} ST:${st}`;
+                list.appendChild(item);
+            });
+            card.appendChild(list);
+        }
+
+        gmPresenceListElement.appendChild(card);
+    });
+}
+
+function renderGmLog(selectDataLog = {}) {
+    if (gmLogMetaElement) {
+        const updatedAt = selectDataLog?.updatedAt
+            ? formatDisplayTime(selectDataLog.updatedAt)
+            : "未作成";
+        gmLogMetaElement.textContent = `最終更新: ${updatedAt}`;
+    }
+    if (gmLogContentElement) {
+        const text = String(selectDataLog?.text ?? "");
+        gmLogContentElement.textContent = text || "ログはまだありません。";
+    }
+}
+
+async function fetchAndRenderGmDashboard() {
+    if (!gmDashboardToken) return;
+    try {
+        const response = await fetch("/api/gm/dashboard", {
+            method: "GET",
+            headers: {
+                "x-gm-token": gmDashboardToken
+            }
+        });
+        const data = await response.json();
+        if (!response.ok || !data?.success) {
+            if (response.status === 401) {
+                stopGmDashboardPolling();
+                gmDashboardToken = "";
+                sessionStorage.removeItem("gmToken");
+                showLoginView();
+                setLoginErrorMessage("GMセッションが切れました。再ログインしてください。");
+                return;
+            }
+            throw new Error(data?.message || `gm dashboard error: ${response.status}`);
+        }
+
+        renderGmPresenceList(data?.connectedPlayers || []);
+        renderGmLog(data?.selectDataLog || {});
+        if (gmPresenceMetaElement) {
+            gmPresenceMetaElement.textContent = `更新: ${formatDisplayTime(data?.updatedAt)}`;
+        }
+    } catch (error) {
+        console.warn("[gm] dashboard fetch failed:", error);
+        if (gmPresenceMetaElement) {
+            gmPresenceMetaElement.textContent = "更新失敗。再試行します。";
+        }
+    }
+}
+
+function startGmDashboardPolling(token) {
+    gmDashboardToken = normalizeNameText(token);
+    stopGmDashboardPolling();
+    if (!gmDashboardToken) return;
+    fetchAndRenderGmDashboard();
+    gmDashboardPollTimer = window.setInterval(fetchAndRenderGmDashboard, 2000);
+}
+
+function resetLoginFields() {
+    if (passwordInputElement) passwordInputElement.value = "";
+}
+
 const submitOnEnter = (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -227,16 +447,21 @@ showLoginView();
 initializeCharacterSidebarTabs();
 initializeCharacterStatusViewTabs();
 
+gmLogoutButtonElement?.addEventListener("click", () => {
+    stopGmDashboardPolling();
+    gmDashboardToken = "";
+    sessionStorage.removeItem("gmToken");
+    resetLoginFields();
+    setLoginErrorMessage("");
+    showLoginView();
+});
+
 loginButton?.addEventListener("click", async () => {
     const username = usernameInputElement?.value?.trim();
     const password = passwordInputElement?.value?.trim();
-    const errorMessage = document.getElementById("error-message");
 
     if (!username || !password) {
-        if (errorMessage) {
-            errorMessage.textContent = "ユーザー名とパスワードを入力してください。";
-            errorMessage.style.display = "block";
-        }
+        setLoginErrorMessage("ユーザー名とパスワードを入力してください。");
         return;
     }
 
@@ -250,21 +475,42 @@ loginButton?.addEventListener("click", async () => {
         const data = await response.json();
 
         if (!response.ok) {
-            if (errorMessage) {
-                errorMessage.textContent = data?.message || "ログインに失敗しました。";
-                errorMessage.style.display = "block";
-            }
+            setLoginErrorMessage(data?.message || "ログインに失敗しました。");
             return;
         }
 
-        sessionStorage.setItem("playerId", username);
-        sessionStorage.setItem("username", username);
+        setLoginErrorMessage("");
+
+        if (data?.mode === "gm") {
+            stopPresenceHeartbeat();
+            currentPlayerId = "";
+            currentPlayerCharacterList = [];
+            sessionStorage.removeItem("playerId");
+            sessionStorage.removeItem("username");
+            sessionStorage.removeItem("playerCharacterList");
+            const token = normalizeNameText(data?.gmToken);
+            if (!token) {
+                setLoginErrorMessage("GMトークンの取得に失敗しました。");
+                return;
+            }
+            gmDashboardToken = token;
+            sessionStorage.setItem("gmToken", gmDashboardToken);
+            window.location.href = "gm.html";
+            resetLoginFields();
+            return;
+        }
+
+        stopGmDashboardPolling();
+        gmDashboardToken = "";
+        sessionStorage.removeItem("gmToken");
 
         const loginCharacters = Array.isArray(data?.characters) ? data.characters : [];
         const playerCharacterList = loginCharacters
             .map((character) => (character?.名前 || character?.name || "").toString().trim())
             .filter((name, index, list) => name && list.indexOf(name) === index);
 
+        sessionStorage.setItem("playerId", username);
+        sessionStorage.setItem("username", username);
         sessionStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
         localStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
 
@@ -278,12 +524,9 @@ loginButton?.addEventListener("click", async () => {
         const mergedCharacters = attachMemoBundlesToCharacters(loginCharacters, memoBundleMap);
         displayCharacterNames(mergedCharacters);
         showMainView();
-        if (errorMessage) errorMessage.style.display = "none";
+        startPresenceHeartbeat(username, playerCharacterList);
     } catch (error) {
-        if (errorMessage) {
-            errorMessage.textContent = "通信エラーが発生しました。";
-            errorMessage.style.display = "block";
-        }
+        setLoginErrorMessage("通信エラーが発生しました。");
     } finally {
         setLoginButtonBusy(false);
     }

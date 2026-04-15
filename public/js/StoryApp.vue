@@ -74,13 +74,16 @@ export default {
             },
             handleResize: null,
             beforeUnloadHandler: null,
+            pageHideHandler: null,
             scrollableTable: null,
             mouseLeaveHandler: null,
+            storyPresenceTimer: null,
         };
     },
     mounted() {
         this.initializeGlobalState();
         this.bindGlobalHelpers();
+        this.startStoryPresenceTracking();
 
         this.updateScale();
 
@@ -93,6 +96,10 @@ export default {
             event.returnValue = '';
         };
         window.addEventListener('beforeunload', this.beforeUnloadHandler);
+        this.pageHideHandler = () => {
+            this.sendStoryPresenceDisconnect();
+        };
+        window.addEventListener('pagehide', this.pageHideHandler);
 
         this.loadAllSections();
 
@@ -114,12 +121,127 @@ export default {
         if (this.beforeUnloadHandler) {
             window.removeEventListener('beforeunload', this.beforeUnloadHandler);
         }
+        if (this.pageHideHandler) {
+            window.removeEventListener('pagehide', this.pageHideHandler);
+        }
 
         if (this.scrollableTable && this.mouseLeaveHandler) {
             this.scrollableTable.removeEventListener('mouseleave', this.mouseLeaveHandler);
         }
+        this.stopStoryPresenceTracking();
     },
     methods: {
+        normalizePresenceText(value) {
+            return String(value ?? '').trim();
+        },
+        safeParseJsonArray(rawText) {
+            if (!rawText) return [];
+            try {
+                const parsed = JSON.parse(rawText);
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        },
+        extractCharacterName(entry) {
+            if (!entry) return '';
+            if (typeof entry === 'string') return this.normalizePresenceText(entry);
+            return this.normalizePresenceText(entry?.name || entry?.名前);
+        },
+        collectStoryCharacterNames() {
+            const names = [];
+            const pushUnique = (candidate) => {
+                const normalized = this.normalizePresenceText(candidate);
+                if (!normalized) return;
+                if (names.includes(normalized)) return;
+                names.push(normalized);
+            };
+
+            const selectedCharacters = this.safeParseJsonArray(window.sessionStorage.getItem('selectedCharacters'));
+            selectedCharacters.forEach((entry) => {
+                pushUnique(this.extractCharacterName(entry));
+            });
+
+            const selectedCharacter = this.safeParseJsonArray(window.sessionStorage.getItem('selectedCharacter'));
+            selectedCharacter.forEach((entry) => {
+                pushUnique(this.extractCharacterName(entry));
+            });
+
+            return names;
+        },
+        getStoryPlayerId() {
+            return this.normalizePresenceText(
+                window.sessionStorage.getItem('playerId')
+                || window.sessionStorage.getItem('username')
+            );
+        },
+        getStorySelectedCharacterName() {
+            const fromRuntime = this.normalizePresenceText(
+                window?.playerData?.name
+                || window?.statusCharacter?.name
+            );
+            if (fromRuntime) return fromRuntime;
+
+            const selectedCharacter = this.safeParseJsonArray(window.sessionStorage.getItem('selectedCharacter'));
+            const fromSelected = this.extractCharacterName(selectedCharacter[0]);
+            if (fromSelected) return fromSelected;
+
+            const selectedCharacters = this.safeParseJsonArray(window.sessionStorage.getItem('selectedCharacters'));
+            return this.extractCharacterName(selectedCharacters[0]);
+        },
+        async sendStoryPresenceHeartbeat() {
+            const playerId = this.getStoryPlayerId();
+            if (!playerId) return;
+
+            const characterNames = this.collectStoryCharacterNames();
+            const selectedCharacterName = this.getStorySelectedCharacterName();
+            try {
+                await fetch('/api/presence/heartbeat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        scope: 'story',
+                        playerId,
+                        characterNames,
+                        selectedCharacterName
+                    })
+                });
+            } catch (error) {
+                console.warn('[story presence] heartbeat failed:', error);
+            }
+        },
+        sendStoryPresenceDisconnect() {
+            const playerId = this.getStoryPlayerId();
+            if (!playerId) return;
+            const payload = JSON.stringify({
+                scope: 'story',
+                playerId
+            });
+            try {
+                if (navigator.sendBeacon) {
+                    const body = new Blob([payload], { type: 'application/json' });
+                    navigator.sendBeacon('/api/presence/disconnect', body);
+                    return;
+                }
+            } catch (error) {
+                console.warn('[story presence] disconnect beacon failed:', error);
+            }
+        },
+        startStoryPresenceTracking() {
+            this.stopStoryPresenceTracking();
+            if (!this.getStoryPlayerId()) return;
+            this.sendStoryPresenceHeartbeat();
+            this.storyPresenceTimer = window.setInterval(() => {
+                this.sendStoryPresenceHeartbeat();
+            }, 5000);
+        },
+        stopStoryPresenceTracking() {
+            if (this.storyPresenceTimer) {
+                clearInterval(this.storyPresenceTimer);
+                this.storyPresenceTimer = null;
+            }
+            this.sendStoryPresenceDisconnect();
+        },
         initializeGlobalState() {
             const characters = JSON.parse(sessionStorage.getItem('selectedCharacters')) || [];
             const selectedCharacter = JSON.parse(sessionStorage.getItem('selectedCharacter')) || [];

@@ -22,6 +22,10 @@ const skillSetIconDirName = '攻撃手段';
 const skillSetIconDirPath = path.join(process.cwd(), 'public', 'images', skillSetIconDirName);
 const MEMO_PROFILE_TAB_ID = '__profile__';
 const MEMO_PROFILE_TAB_TITLE = 'プロフィール';
+const GM_LOGIN_ID = 'siev';
+const GM_LOGIN_PASSWORD = '11';
+const GM_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const PLAYER_ACTIVE_TTL_MS = 3 * 60 * 1000;
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
@@ -70,6 +74,14 @@ function sanitizeTsvValue(value) {
 
 function normalizeText(value) {
     return String(value ?? '').trim();
+}
+
+function normalizeNameList(values) {
+    return Array.from(new Set(
+        (Array.isArray(values) ? values : [])
+            .map((value) => normalizeText(value))
+            .filter(Boolean)
+    ));
 }
 
 function normalizePresetIconName(value) {
@@ -800,6 +812,374 @@ function readSheet(workbook, names, defval = 0) {
     return XLSX.utils.sheet_to_json(sheet, { defval });
 }
 
+function buildCharacterSummary(characterData) {
+    if (!characterData || typeof characterData !== 'object') return null;
+    return {
+        名前: pickFirstValue(characterData, FIELD_KEYS.name),
+        二つ名: pickFirstValue(characterData, FIELD_KEYS.title),
+        Lv: characterData.Lv,
+        Ef: characterData.Ef,
+        HP: characterData.HP,
+        MP: characterData.MP,
+        ST: characterData.ST,
+        攻撃: pickFirstValue(characterData, FIELD_KEYS.attack),
+        防御: pickFirstValue(characterData, FIELD_KEYS.defense),
+        魔力: pickFirstValue(characterData, FIELD_KEYS.magic),
+        魔防: pickFirstValue(characterData, FIELD_KEYS.magicDefense),
+        速度: pickFirstValue(characterData, FIELD_KEYS.speed),
+        命中: pickFirstValue(characterData, FIELD_KEYS.hit),
+        SIZ: characterData.SIZ,
+        APP: characterData.APP,
+        能力値: pickFirstValue(characterData, FIELD_KEYS.ability),
+        持ち物: pickFirstValue(characterData, FIELD_KEYS.items),
+        所持金: pickFirstValue(characterData, FIELD_KEYS.money),
+        メモ: pickFirstValue(characterData, FIELD_KEYS.memo)
+    };
+}
+
+function findCharacterByName(characterName) {
+    const normalizedName = normalizeText(characterName);
+    if (!normalizedName || !Array.isArray(cachedCharacters)) return null;
+    return cachedCharacters.find(
+        (character) => pickFirstText(character, FIELD_KEYS.name) === normalizedName
+    ) || null;
+}
+
+function buildLoginCharactersForUser(user) {
+    const characterSlots = Object.keys(user || {})
+        .map((key) => {
+            const match = String(key).match(/^character(\d+)$/i);
+            if (!match) return null;
+            return {
+                key,
+                order: Number(match[1])
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.order - b.order);
+
+    const characters = [];
+    for (const slot of characterSlots) {
+        const characterName = user[slot.key];
+        if (!characterName) continue;
+        const characterData = findCharacterByName(characterName);
+        if (!characterData) continue;
+        const summary = buildCharacterSummary(characterData);
+        if (!summary) continue;
+        characters.push(summary);
+    }
+    return characters;
+}
+
+function toFiniteNumber(value, fallback = 0) {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) ? numericValue : fallback;
+}
+
+function buildBattleResourceSummary(summary = {}, state = {}) {
+    const hpMax = Math.max(0, Math.round(toFiniteNumber(summary?.HP, 0)));
+    const mpMax = Math.max(0, Math.round(toFiniteNumber(summary?.MP, 0)));
+    const stMax = Math.max(0, Math.round(toFiniteNumber(summary?.ST, 0)));
+    const damage = normalizeBattleStateDamageEntry(state?.damage);
+    const hpCurrent = hpMax > 0
+        ? Math.max(0, Math.round(hpMax * (1 - (toFiniteNumber(damage?.HP_消費, 0) / 100))))
+        : 0;
+    const mpCurrent = Math.max(0, Math.round(mpMax - toFiniteNumber(damage?.MP_消費, 0)));
+    const stCurrent = Math.max(0, Math.round(stMax - toFiniteNumber(damage?.ST_消費, 0)));
+
+    return {
+        hp: {
+            current: Math.min(hpMax, hpCurrent),
+            max: hpMax,
+            consumedPercent: Math.max(0, Math.round(toFiniteNumber(damage?.HP_消費, 0)))
+        },
+        mp: {
+            current: Math.min(mpMax, mpCurrent),
+            max: mpMax,
+            consumed: Math.max(0, Math.round(toFiniteNumber(damage?.MP_消費, 0)))
+        },
+        st: {
+            current: Math.min(stMax, stCurrent),
+            max: stMax,
+            consumed: Math.max(0, Math.round(toFiniteNumber(damage?.ST_消費, 0)))
+        }
+    };
+}
+
+function findSkillDataByNameAndType(skillName = '', skillType = '') {
+    const normalizedName = normalizeText(skillName);
+    if (!normalizedName || !Array.isArray(cachedSkills)) return null;
+    const normalizedType = normalizeText(skillType).toUpperCase();
+    if (normalizedType) {
+        const exact = cachedSkills.find((row) => (
+            pickFirstText(row, FIELD_KEYS.skillName) === normalizedName
+            && normalizeText(pickFirstValue(row, FIELD_KEYS.skillType)).toUpperCase() === normalizedType
+        ));
+        if (exact) return exact;
+    }
+    return cachedSkills.find((row) => pickFirstText(row, FIELD_KEYS.skillName) === normalizedName) || null;
+}
+
+function buildBattleStateSkillView(entry = {}) {
+    const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+    const skillName = normalizeText(source?.skillName);
+    const skillType = normalizeText(source?.skillType);
+    const skillData = findSkillDataByNameAndType(skillName, skillType);
+    const detail = normalizeText(pickFirstValue(skillData, FIELD_KEYS.skillDetail) || '');
+    const attribute = normalizeText(skillData?.属性 || '');
+    const ruby = normalizeText(skillData?.英名 || '');
+    const magicLevel = normalizeText(skillData?.魔法Lv ?? skillData?.魔法Rank ?? '');
+    const power = Math.round(toFiniteNumber(skillData?.威力, 0));
+    const guard = Math.round(toFiniteNumber(skillData?.守り ?? skillData?.防御, 0));
+    const state = Math.round(toFiniteNumber(skillData?.状態, 0));
+    return {
+        ...source,
+        detail,
+        attribute,
+        ruby,
+        magicLevel,
+        power,
+        guard,
+        state
+    };
+}
+
+const connectedPlayerMap = new Map();
+const storyConnectedPlayerMap = new Map();
+const gmSessionMap = new Map();
+
+function pruneGmSessions(nowMs = Date.now()) {
+    for (const [token, session] of gmSessionMap.entries()) {
+        if (!session || !Number.isFinite(session.expiresAtMs) || session.expiresAtMs <= nowMs) {
+            gmSessionMap.delete(token);
+        }
+    }
+}
+
+function createGmSessionToken() {
+    const nowMs = Date.now();
+    pruneGmSessions(nowMs);
+    const token = `gm-${nowMs.toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    gmSessionMap.set(token, {
+        issuedAtMs: nowMs,
+        expiresAtMs: nowMs + GM_SESSION_TTL_MS
+    });
+    return token;
+}
+
+function hasValidGmSessionToken(token) {
+    const normalizedToken = normalizeText(token);
+    if (!normalizedToken) return false;
+    const nowMs = Date.now();
+    pruneGmSessions(nowMs);
+    const session = gmSessionMap.get(normalizedToken);
+    if (!session) return false;
+    if (!Number.isFinite(session.expiresAtMs) || session.expiresAtMs <= nowMs) {
+        gmSessionMap.delete(normalizedToken);
+        return false;
+    }
+    return true;
+}
+
+function prunePresenceMap(targetMap, nowMs = Date.now()) {
+    if (!(targetMap instanceof Map)) return;
+    for (const [playerId, entry] of targetMap.entries()) {
+        if (!entry || !Number.isFinite(entry.lastSeenAtMs) || (nowMs - entry.lastSeenAtMs) > PLAYER_ACTIVE_TTL_MS) {
+            targetMap.delete(playerId);
+        }
+    }
+}
+
+function upsertPresenceEntry(targetMap, playerId, characterNames = [], options = {}) {
+    if (!(targetMap instanceof Map)) return null;
+    const normalizedPlayerId = normalizeText(playerId);
+    if (!normalizedPlayerId || normalizedPlayerId === 'guest' || normalizedPlayerId === GM_LOGIN_ID) return null;
+
+    const nowMs = Date.now();
+    prunePresenceMap(targetMap, nowMs);
+
+    const normalizedCharacterNames = normalizeNameList(characterNames);
+    const replaceCharacterNames = Boolean(options?.replaceCharacterNames);
+    const selectedCharacterName = normalizeText(options?.selectedCharacterName);
+    const existing = targetMap.get(normalizedPlayerId);
+    const characterSet = new Set(
+        replaceCharacterNames
+            ? normalizedCharacterNames
+            : normalizeNameList(existing?.characterNames)
+    );
+    normalizedCharacterNames.forEach((name) => characterSet.add(name));
+
+    const nextEntry = {
+        playerId: normalizedPlayerId,
+        characterNames: Array.from(characterSet),
+        selectedCharacterName: selectedCharacterName || normalizeText(existing?.selectedCharacterName),
+        firstSeenAtMs: Number(existing?.firstSeenAtMs) || nowMs,
+        lastSeenAtMs: nowMs
+    };
+    targetMap.set(normalizedPlayerId, nextEntry);
+    return nextEntry;
+}
+
+function removePresenceEntry(targetMap, playerId) {
+    if (!(targetMap instanceof Map)) return false;
+    const normalizedPlayerId = normalizeText(playerId);
+    if (!normalizedPlayerId) return false;
+    return targetMap.delete(normalizedPlayerId);
+}
+
+function getPresenceList(targetMap, options = {}) {
+    if (!(targetMap instanceof Map)) return [];
+    prunePresenceMap(targetMap, Date.now());
+    const includeBattleState = Boolean(options?.includeBattleState);
+    const battleStateStore = (options?.battleStateStore && typeof options.battleStateStore === 'object')
+        ? options.battleStateStore
+        : null;
+    const normalizedAllStates = includeBattleState
+        ? normalizeBattleStateStoreStates(battleStateStore?.states || {})
+        : {};
+
+    const findCharacterStateByName = (playerStates = {}, characterName = '') => {
+        const normalizedName = normalizeText(characterName);
+        if (!normalizedName || !playerStates || typeof playerStates !== 'object') {
+            return null;
+        }
+        if (Object.prototype.hasOwnProperty.call(playerStates, normalizedName)) {
+            return playerStates[normalizedName];
+        }
+        const matched = Object.entries(playerStates).find(([name]) => normalizeText(name) === normalizedName);
+        return matched ? matched[1] : null;
+    };
+
+    const findCharacterStateAcrossPlayers = (characterName = '', preferredPlayerId = '') => {
+        const normalizedName = normalizeText(characterName);
+        if (!normalizedName) return null;
+
+        const normalizedPreferredPlayerId = normalizeText(preferredPlayerId);
+        if (normalizedPreferredPlayerId) {
+            const preferredCollection = normalizedAllStates?.[normalizedPreferredPlayerId];
+            const preferredState = findCharacterStateByName(preferredCollection || {}, normalizedName);
+            if (preferredState) {
+                return preferredState;
+            }
+        }
+
+        const entries = Object.entries(normalizedAllStates || {});
+        for (const [, collection] of entries) {
+            const found = findCharacterStateByName(collection || {}, normalizedName);
+            if (found) {
+                return found;
+            }
+        }
+        return null;
+    };
+
+    return Array.from(targetMap.values())
+        .sort((a, b) => {
+            const aFirst = Number(a?.firstSeenAtMs) || Number.MAX_SAFE_INTEGER;
+            const bFirst = Number(b?.firstSeenAtMs) || Number.MAX_SAFE_INTEGER;
+            if (aFirst !== bFirst) return aFirst - bFirst;
+            return normalizeText(a?.playerId).localeCompare(normalizeText(b?.playerId), 'ja');
+        })
+        .map((entry) => {
+            const playerId = normalizeText(entry?.playerId);
+            const characterNames = normalizeNameList(entry?.characterNames);
+            const playerStates = includeBattleState
+                ? normalizeBattleStateCharacterCollection(battleStateStore?.states?.[playerId] || {})
+                : {};
+            const characters = characterNames
+                .map((name) => {
+                    const summary = buildCharacterSummary(findCharacterByName(name));
+                    if (!summary) return null;
+                    if (!includeBattleState) return summary;
+                    const ownCharacterState = findCharacterStateByName(playerStates, name);
+                    const fallbackCharacterState = ownCharacterState
+                        ? null
+                        : findCharacterStateAcrossPlayers(name, playerId);
+                    const battleStateRaw = normalizeBattleStateCharacterEntry(
+                        ownCharacterState
+                        || fallbackCharacterState
+                        || {}
+                    );
+                    const battleState = {
+                        ...battleStateRaw,
+                        retainedBuffSkills: (Array.isArray(battleStateRaw?.retainedBuffSkills)
+                            ? battleStateRaw.retainedBuffSkills
+                            : []
+                        ).map((entry) => buildBattleStateSkillView(entry)),
+                        skillCooldowns: (Array.isArray(battleStateRaw?.skillCooldowns)
+                            ? battleStateRaw.skillCooldowns
+                            : []
+                        ).map((entry) => buildBattleStateSkillView(entry))
+                    };
+                    return {
+                        ...summary,
+                        battleState,
+                        resources: buildBattleResourceSummary(summary, battleState)
+                    };
+                })
+                .filter(Boolean);
+            return {
+                playerId,
+                selectedCharacterName: normalizeText(entry?.selectedCharacterName),
+                firstSeenAt: new Date(Number(entry?.firstSeenAtMs) || Date.now()).toISOString(),
+                lastSeenAt: new Date(Number(entry?.lastSeenAtMs) || Date.now()).toISOString(),
+                characterNames,
+                characters
+            };
+        });
+}
+
+function upsertConnectedPlayer(playerId, characterNames = [], options = {}) {
+    return upsertPresenceEntry(connectedPlayerMap, playerId, characterNames, options);
+}
+
+function upsertStoryConnectedPlayer(playerId, characterNames = [], options = {}) {
+    return upsertPresenceEntry(storyConnectedPlayerMap, playerId, characterNames, options);
+}
+
+function removeConnectedPlayer(playerId) {
+    return removePresenceEntry(connectedPlayerMap, playerId);
+}
+
+function removeStoryConnectedPlayer(playerId) {
+    return removePresenceEntry(storyConnectedPlayerMap, playerId);
+}
+
+function getStoryConnectedPlayerList(options = {}) {
+    return getPresenceList(storyConnectedPlayerMap, options);
+}
+
+function readSelectDataLogSnapshot() {
+    if (!fs.existsSync(selectDataLogPath)) {
+        return {
+            exists: false,
+            updatedAt: null,
+            mtimeMs: 0,
+            text: ''
+        };
+    }
+    try {
+        const stat = fs.statSync(selectDataLogPath);
+        const mtimeMs = Number(stat?.mtimeMs) || 0;
+        const updatedAt = mtimeMs > 0 ? new Date(mtimeMs).toISOString() : null;
+        const text = fs.readFileSync(selectDataLogPath, 'utf8');
+        return {
+            exists: true,
+            updatedAt,
+            mtimeMs,
+            text: String(text ?? '')
+        };
+    } catch (error) {
+        console.error('read select_dataLog snapshot error:', error);
+        return {
+            exists: true,
+            updatedAt: null,
+            mtimeMs: 0,
+            text: ''
+        };
+    }
+}
+
 // キャッシュ
 let cachedUsers = [];
 let cachedCharacters = [];
@@ -960,62 +1340,39 @@ router.get('/character', (req, res) => {
 
 router.post('/login', (req, res) => {
     const { username, password } = req.body;
+    const normalizedUsername = normalizeText(username);
+    const normalizedPassword = normalizeText(password);
+
+    if (normalizedUsername === GM_LOGIN_ID && normalizedPassword === GM_LOGIN_PASSWORD) {
+        const gmToken = createGmSessionToken();
+        return res.status(200).send({
+            message: 'GMログイン成功',
+            mode: 'gm',
+            gmToken
+        });
+    }
 
     const user = cachedUsers.find(
-        (u) => normalizeText(u.ID) === normalizeText(username)
-            && normalizeText(u.password) === normalizeText(password)
+        (u) => normalizeText(u.ID) === normalizedUsername
+            && normalizeText(u.password) === normalizedPassword
     );
 
     if (!user) {
         return res.status(401).send({ message: 'invalid id or password' });
     }
 
-    const characterSlots = Object.keys(user)
-        .map((key) => {
-            const match = String(key).match(/^character(\d+)$/i);
-            if (!match) return null;
-            return {
-                key,
-                order: Number(match[1])
-            };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.order - b.order);
+    const characters = buildLoginCharactersForUser(user);
+    upsertConnectedPlayer(
+        normalizedUsername,
+        characters.map((character) => normalizeText(character?.名前)),
+        { replaceCharacterNames: true }
+    );
 
-    const characters = [];
-    for (const slot of characterSlots) {
-        const characterName = user[slot.key];
-        if (!characterName) continue;
-
-        const characterData = cachedCharacters.find(
-            (c) => pickFirstText(c, FIELD_KEYS.name) === normalizeText(characterName)
-        );
-        if (!characterData) continue;
-
-        characters.push({
-            名前: pickFirstValue(characterData, FIELD_KEYS.name),
-            二つ名: pickFirstValue(characterData, FIELD_KEYS.title),
-            Lv: characterData.Lv,
-            Ef: characterData.Ef,
-            HP: characterData.HP,
-            MP: characterData.MP,
-            ST: characterData.ST,
-            攻撃: pickFirstValue(characterData, FIELD_KEYS.attack),
-            防御: pickFirstValue(characterData, FIELD_KEYS.defense),
-            魔力: pickFirstValue(characterData, FIELD_KEYS.magic),
-            魔防: pickFirstValue(characterData, FIELD_KEYS.magicDefense),
-            速度: pickFirstValue(characterData, FIELD_KEYS.speed),
-            命中: pickFirstValue(characterData, FIELD_KEYS.hit),
-            SIZ: characterData.SIZ,
-            APP: characterData.APP,
-            能力値: pickFirstValue(characterData, FIELD_KEYS.ability),
-            持ち物: pickFirstValue(characterData, FIELD_KEYS.items),
-            所持金: pickFirstValue(characterData, FIELD_KEYS.money),
-            メモ: pickFirstValue(characterData, FIELD_KEYS.memo)
-        });
-    }
-
-    res.status(200).send({ message: 'ログイン成功', characters });
+    return res.status(200).send({
+        message: 'ログイン成功',
+        mode: 'player',
+        characters
+    });
 });
 
 router.post('/skills', (req, res) => {
@@ -1141,6 +1498,11 @@ router.post('/memo/load', (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const characterName = normalizeText(req.body?.characterName) || '不明';
+        if (characterName !== '不明') {
+            upsertConnectedPlayer(playerId, [characterName]);
+        } else {
+            upsertConnectedPlayer(playerId, []);
+        }
         const store = readBattleMemoStore();
         const playerMemo = convertLegacyMemoDataForPlayer(store?.memos?.[playerId] || {});
         const entry = normalizeMemoEntry(playerMemo?.characters?.[characterName] || {}, 'メモ');
@@ -1164,6 +1526,11 @@ router.post('/memo/save', (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const characterName = normalizeText(req.body?.characterName) || '不明';
+        if (characterName !== '不明') {
+            upsertConnectedPlayer(playerId, [characterName]);
+        } else {
+            upsertConnectedPlayer(playerId, []);
+        }
         const text = String(req.body?.text || '');
 
         if (text.length > 200000) {
@@ -1203,6 +1570,9 @@ router.post('/memo/all/load', (req, res) => {
         const requestedCharacterNames = Array.isArray(req.body?.characterNames)
             ? req.body.characterNames.map((name) => normalizeText(name)).filter(Boolean)
             : [];
+        upsertConnectedPlayer(playerId, requestedCharacterNames, {
+            replaceCharacterNames: requestedCharacterNames.length > 0
+        });
         const store = readBattleMemoStore();
         const profiles = resolveCharacterProfilesForMemoStore(store);
         const normalized = convertLegacyMemoDataForPlayer(store?.memos?.[playerId] || {});
@@ -1234,6 +1604,12 @@ router.post('/memo/all/save', (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const data = normalizeMemoData(req.body?.data || {}, { characterAllowEmptyTabs: true });
+        const characterNames = Object.keys(
+            (data?.characters && typeof data.characters === 'object') ? data.characters : {}
+        );
+        upsertConnectedPlayer(playerId, characterNames, {
+            replaceCharacterNames: characterNames.length > 0
+        });
         const nowIso = new Date().toISOString();
         const store = readBattleMemoStore();
         const existingProfiles = resolveCharacterProfilesForMemoStore(store);
@@ -1512,6 +1888,9 @@ router.post('/battle-state/load', (req, res) => {
         const requestedCharacterNames = (Array.isArray(req.body?.characterNames) ? req.body.characterNames : [])
             .map((name) => normalizeText(name))
             .filter(Boolean);
+        upsertConnectedPlayer(playerId, requestedCharacterNames, {
+            replaceCharacterNames: requestedCharacterNames.length > 0
+        });
         const requestedSet = new Set(requestedCharacterNames);
 
         const store = readBattleStateStore();
@@ -1547,6 +1926,7 @@ router.post('/battle-state/save', (req, res) => {
                 message: 'characterName is required'
             });
         }
+        upsertConnectedPlayer(playerId, [characterName]);
 
         const store = readBattleStateStore();
         if (!store.states[playerId] || typeof store.states[playerId] !== 'object') {
@@ -1568,6 +1948,95 @@ router.post('/battle-state/save', (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'failed to save battle state'
+        });
+    }
+});
+
+router.post('/presence/heartbeat', (req, res) => {
+    try {
+        const playerId = normalizeText(req.body?.playerId);
+        const scope = normalizeText(req.body?.scope).toLowerCase();
+        const useStoryScope = scope === 'story';
+        const selectedCharacterName = normalizeText(req.body?.selectedCharacterName);
+        const characterNamesRaw = Array.isArray(req.body?.characterNames)
+            ? req.body.characterNames
+            : [req.body?.characterName];
+        const characterNames = normalizeNameList(characterNamesRaw);
+        const entry = (useStoryScope ? upsertStoryConnectedPlayer : upsertConnectedPlayer)(playerId, characterNames, {
+            replaceCharacterNames: characterNames.length > 0,
+            selectedCharacterName
+        });
+        return res.status(200).json({
+            success: true,
+            scope: useStoryScope ? 'story' : 'default',
+            connected: Boolean(entry),
+            playerId: normalizeText(entry?.playerId),
+            selectedCharacterName: normalizeText(entry?.selectedCharacterName),
+            lastSeenAt: entry ? new Date(entry.lastSeenAtMs).toISOString() : null
+        });
+    } catch (error) {
+        console.error('presence heartbeat error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'failed to update presence heartbeat'
+        });
+    }
+});
+
+router.post('/presence/disconnect', (req, res) => {
+    try {
+        const playerId = normalizeText(req.body?.playerId);
+        const scope = normalizeText(req.body?.scope).toLowerCase();
+        let removed = false;
+        if (scope === 'story') {
+            removed = removeStoryConnectedPlayer(playerId);
+        } else if (scope) {
+            removed = removeConnectedPlayer(playerId);
+        } else {
+            const removedDefault = removeConnectedPlayer(playerId);
+            const removedStory = removeStoryConnectedPlayer(playerId);
+            removed = removedDefault || removedStory;
+        }
+        return res.status(200).json({
+            success: true,
+            removed
+        });
+    } catch (error) {
+        console.error('presence disconnect error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'failed to update disconnect presence'
+        });
+    }
+});
+
+router.get('/gm/dashboard', (req, res) => {
+    try {
+        const token = normalizeText(req.get('x-gm-token') || req.query?.token);
+        if (!hasValidGmSessionToken(token)) {
+            return res.status(401).json({
+                success: false,
+                message: 'invalid gm token'
+            });
+        }
+
+        const selectDataLog = readSelectDataLogSnapshot();
+        const battleStateStore = readBattleStateStore();
+        const connectedPlayers = getStoryConnectedPlayerList({
+            includeBattleState: true,
+            battleStateStore
+        });
+        return res.status(200).json({
+            success: true,
+            updatedAt: new Date().toISOString(),
+            connectedPlayers,
+            selectDataLog
+        });
+    } catch (error) {
+        console.error('gm dashboard error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'failed to load gm dashboard'
         });
     }
 });

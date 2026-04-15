@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>GMダッシュボード - TRPG</title>
+    <link rel="stylesheet" href="css/characterInfo.css">
+    <link rel="stylesheet" href="gm.css">
+</head>
+<body>
+    <main id="gm-root">
+        <header class="gm-header">
+            <div>
+                <p class="gm-kicker">GM CONSOLE</p>
+                <h1>監視ダッシュボード</h1>
+            </div>
+            <button id="gm-logout-button" type="button">ログアウト</button>
+        </header>
+
+        <section class="gm-panel">
+            <h2>接続中プレイヤー / キャラクター</h2>
+            <p id="gm-presence-meta" class="gm-meta">更新待ち...</p>
+            <div class="gm-scroll">
+                <div id="gm-presence-list"></div>
+            </div>
+        </section>
+
+        <section class="gm-panel gm-bottom-panel">
+            <div class="gm-tab-header" role="tablist" aria-label="GMログ表示切替">
+                <button type="button" class="gm-tab-button is-active" data-gm-tab="log" role="tab" aria-selected="true">
+                    送信ログ
+                </button>
+                <button type="button" class="gm-tab-button" data-gm-tab="character" role="tab" aria-selected="false">
+                    キャラ詳細
+                </button>
+            </div>
+
+            <div class="gm-tab-panels">
+                <section id="gm-tab-log" class="gm-tab-content is-active" role="tabpanel">
+                    <p id="gm-log-meta" class="gm-meta">更新待ち...</p>
+                    <div class="gm-log-format-header" role="tablist" aria-label="ログコピー形式切替">
+                        <button type="button" class="gm-log-format-button is-active" data-gm-log-format="block" aria-selected="true">
+                            ブロック形式
+                        </button>
+                        <button type="button" class="gm-log-format-button" data-gm-log-format="row" aria-selected="false">
+                            行形式
+                        </button>
+                    </div>
+                    <div class="gm-log-format-panels">
+                        <section class="gm-log-format-panel is-active" data-gm-log-format-panel="block">
+                            <textarea id="gm-log-excel-block-content" class="gm-log-excel-content" spellcheck="false" wrap="off"></textarea>
+                        </section>
+                        <section class="gm-log-format-panel" data-gm-log-format-panel="row" hidden>
+                            <textarea id="gm-log-excel-row-content" class="gm-log-excel-content" spellcheck="false" wrap="off"></textarea>
+                        </section>
+                    </div>
+                </section>
+
+                <section id="gm-tab-character" class="gm-tab-content" role="tabpanel" hidden>
+                    <h2>選択中キャラクター詳細</h2>
+                    <div class="gm-scroll">
+                        <div id="gm-character-detail"></div>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script src="gm.js"></script>
+</body>
+</html>

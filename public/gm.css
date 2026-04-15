@@ -1,0 +1,465 @@
+:root {
+    --bg: #edf3fa;
+    --panel-bg: #ffffff;
+    --line: #d8e3f1;
+    --text: #273240;
+    --accent: #1f4f83;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+}
+
+#gm-root {
+    width: min(1280px, 100%);
+    height: 100%;
+    margin: 0 auto;
+    padding: 14px;
+    display: grid;
+    grid-template-rows: auto 1fr 1.05fr;
+    gap: 12px;
+}
+
+.gm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-bg);
+}
+
+.gm-kicker {
+    margin: 0 0 4px;
+    color: #4c6d92;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+.gm-header h1 {
+    margin: 0;
+    color: var(--accent);
+    font-size: 1.22rem;
+}
+
+#gm-logout-button {
+    padding: 9px 14px;
+    border: 1px solid #b8cae2;
+    border-radius: 8px;
+    background: #f4f8ff;
+    color: #2f547a;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#gm-logout-button:hover {
+    border-color: #8faed0;
+    background: #eaf2ff;
+}
+
+.gm-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel-bg);
+    padding: 12px;
+}
+
+.gm-panel h2 {
+    margin: 0;
+    color: #235489;
+    font-size: 1rem;
+}
+
+.gm-meta {
+    margin: 6px 0 8px;
+    font-size: 0.83rem;
+    color: #527195;
+}
+
+.gm-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.gm-player-group {
+    margin-bottom: 10px;
+    border: 1px solid #d3dfef;
+    border-radius: 10px;
+    background: #f8fbff;
+    padding: 10px;
+}
+
+.gm-player-heading {
+    margin-bottom: 8px;
+}
+
+.gm-player-heading h3 {
+    margin: 0;
+    color: #234b76;
+    font-size: 0.95rem;
+}
+
+.gm-player-seen-at {
+    margin: 3px 0 0;
+    color: #5a7597;
+    font-size: 0.8rem;
+}
+
+.gm-character-card-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.gm-character-card {
+    cursor: pointer;
+    min-height: 158px;
+}
+
+.gm-bottom-panel {
+    padding-top: 8px;
+}
+
+.gm-tab-header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    position: relative;
+    z-index: 3;
+}
+
+.gm-tab-button {
+    padding: 6px 10px;
+    border: 1px solid #c1d4ea;
+    border-radius: 999px;
+    background: #f4f8ff;
+    color: #355274;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.gm-tab-button:hover {
+    border-color: #8faed0;
+    background: #eaf2ff;
+}
+
+.gm-tab-button.is-active {
+    border-color: #4f7eb5;
+    background: #dce9ff;
+    color: #1f4572;
+}
+
+.gm-tab-panels {
+    flex: 1;
+    min-height: 0;
+}
+
+.gm-tab-content {
+    width: 100%;
+    height: 100%;
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.gm-tab-content.is-active {
+    display: flex;
+}
+
+.gm-tab-content[hidden] {
+    display: none !important;
+}
+
+.gm-sub-title {
+    margin: 0 0 5px;
+    color: #27527d;
+    font-size: 0.9rem;
+}
+
+#gm-character-detail {
+    display: grid;
+    gap: 8px;
+    min-height: 220px;
+    visibility: visible;
+    opacity: 1;
+}
+
+#gm-tab-character .gm-scroll {
+    min-height: 240px;
+    overflow-y: auto;
+}
+
+.gm-detail-character-name {
+    margin: 0;
+    color: #224f7c;
+    font-size: 1.02rem;
+    font-weight: 800;
+}
+
+.gm-detail-meta-line {
+    margin: 0;
+    font-size: 0.86rem;
+    color: #355274;
+    font-weight: 700;
+}
+
+.gm-skill-section {
+    border: 1px solid #d5e1f1;
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 8px 10px;
+}
+
+.gm-story-skill-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.gm-story-skill-table th,
+.gm-story-skill-table td {
+    border: 1px solid #d4e1f2;
+    padding: 5px 6px;
+    font-size: 0.78rem;
+    color: #2b4460;
+    vertical-align: top;
+}
+
+#gm-character-detail .gm-skill-section {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#gm-character-detail .gm-story-skill-table {
+    display: table !important;
+    width: 100% !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#gm-character-detail .gm-story-skill-table thead {
+    display: table-header-group !important;
+}
+
+#gm-character-detail .gm-story-skill-table tbody {
+    display: table-row-group !important;
+}
+
+#gm-character-detail .gm-story-skill-table tr {
+    display: table-row !important;
+}
+
+#gm-character-detail .gm-story-skill-table th,
+#gm-character-detail .gm-story-skill-table td {
+    display: table-cell !important;
+    color: #1f2f45 !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.gm-story-skill-table th {
+    background: #4caf50;
+    color: #1d2f1d;
+    font-weight: 700;
+    text-align: center;
+}
+
+.gm-story-skill-table td {
+    background: #ffffff;
+}
+
+.gm-story-skill-header-main th {
+    font-size: 0.86rem;
+    line-height: 1.25;
+}
+
+.gm-story-skill-header-sub th {
+    font-size: 0.78rem;
+}
+
+.gm-story-skill-name-cell {
+    text-align: center;
+    font-weight: 700;
+    vertical-align: middle;
+    padding: 9px 8px;
+    line-height: 1.35;
+    font-size: 0.95rem;
+    position: relative;
+}
+
+.gm-story-skill-name-inline ruby rt {
+    color: #5f7084;
+    font-size: 0.62em;
+}
+
+.gm-story-skill-value-row .gm-story-skill-metric-cell {
+    text-align: center;
+    vertical-align: middle;
+    font-size: 0.9rem;
+    font-weight: 700;
+}
+
+.gm-story-skill-turn-cell {
+    color: #214f73;
+}
+
+.gm-story-skill-desc-cell {
+    padding: 6px 8px;
+    vertical-align: top;
+}
+
+.gm-story-skill-description {
+    position: relative;
+    min-height: 40px;
+}
+
+.gm-story-skill-description-text {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.77rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.gm-story-skill-description.is-cooldown .gm-story-skill-description-text {
+    color: rgba(43, 68, 96, 0.3);
+}
+
+.gm-story-skill-cooldown-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    font-size: 1.28em;
+    font-weight: 900;
+    line-height: 1;
+    color: #1d4ed8;
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.95);
+    letter-spacing: 0.02em;
+}
+
+.gm-story-skill-name-row.gm-story-skill-pair-b td,
+.gm-story-skill-value-row.gm-story-skill-pair-b td {
+    background: #f4f8fb;
+}
+
+.gm-log-content {
+    margin: 0;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #d3dfef;
+    background: #f8fbff;
+    color: #223957;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.gm-log-format-header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.gm-log-format-button {
+    padding: 5px 10px;
+    border: 1px solid #c1d4ea;
+    border-radius: 999px;
+    background: #f4f8ff;
+    color: #355274;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.gm-log-format-button:hover {
+    border-color: #8faed0;
+    background: #eaf2ff;
+}
+
+.gm-log-format-button.is-active {
+    border-color: #4f7eb5;
+    background: #dce9ff;
+    color: #1f4572;
+}
+
+.gm-log-format-panels {
+    width: 100%;
+}
+
+.gm-log-format-panel {
+    display: none;
+}
+
+.gm-log-format-panel.is-active {
+    display: block;
+}
+
+.gm-log-format-panel[hidden] {
+    display: none !important;
+}
+
+.gm-log-excel-label {
+    display: block;
+    margin: 0 0 4px;
+    font-size: 0.8rem;
+    color: #456384;
+    font-weight: 700;
+}
+
+.gm-log-excel-content {
+    width: 100%;
+    min-height: 340px;
+    margin: 0 0 8px;
+    padding: 8px 10px;
+    border: 1px solid #c5d7ee;
+    border-radius: 8px;
+    background: #fcfeff;
+    color: #233a56;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: pre;
+    overflow: auto;
+    resize: vertical;
+}
+
+.gm-empty {
+    margin: 0;
+    color: #56718f;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+@media (max-width: 900px) {
+    #gm-root {
+        grid-template-rows: auto 1fr 1fr;
+    }
+}

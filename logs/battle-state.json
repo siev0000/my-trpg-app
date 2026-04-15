@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-04-13T13:46:50.535Z",
+  "updatedAt": "2026-04-15T13:12:56.886Z",
   "states": {
     "siev": {
       "ドゥンケルハイト": {
@@ -18,9 +18,73 @@
         "retainedBuffSkills": [],
         "skillCooldowns": [],
         "damage": {
-          "HP_消費": 0,
+          "HP_消費": 30,
           "MP_消費": 0,
           "ST_消費": 0
+        }
+      }
+    },
+    "rikorisu": {
+      "リコリス": {
+        "battleTurn": 1,
+        "retainedBuffSkills": [
+          {
+            "skillName": "黒風白雨",
+            "skillType": "S",
+            "totalTurns": 1,
+            "elapsedTurns": 0
+          },
+          {
+            "skillName": "闇の波動放出",
+            "skillType": "Q",
+            "totalTurns": 1,
+            "elapsedTurns": 0
+          }
+        ],
+        "skillCooldowns": [
+          {
+            "skillName": "闇の波動放出",
+            "skillType": "Q",
+            "cooldownTurns": 6,
+            "elapsedTurns": 0,
+            "pendingWhileActive": true
+          }
+        ],
+        "damage": {
+          "HP_消費": 20,
+          "MP_消費": 40,
+          "ST_消費": 90
+        }
+      }
+    },
+    "sige": {
+      "クルーツェル": {
+        "battleTurn": 1,
+        "retainedBuffSkills": [
+          {
+            "skillName": "光の護り手",
+            "skillType": "S",
+            "totalTurns": 1,
+            "elapsedTurns": 0
+          },
+          {
+            "skillName": "不落要塞",
+            "skillType": "Q",
+            "totalTurns": 1,
+            "elapsedTurns": 0
+          },
+          {
+            "skillName": "不動反射",
+            "skillType": "Q",
+            "totalTurns": 1,
+            "elapsedTurns": 0
+          }
+        ],
+        "skillCooldowns": [],
+        "damage": {
+          "HP_消費": 0,
+          "MP_消費": 12,
+          "ST_消費": 69
         }
       }
     }

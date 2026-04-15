@@ -675,3 +675,151 @@ body.main-view #app-frame {
 .stat-lowest {
     color: #2f65ce;
 }
+
+body.gm-view #app-frame {
+    display: block;
+    padding: 16px;
+    background: #eef4fb;
+}
+
+#gm-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#gm-container.is-hidden {
+    display: none;
+}
+
+.gm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid #d8e3f1;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.gm-kicker {
+    margin: 0 0 4px;
+    color: #4c6d92;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+.gm-header h2 {
+    margin: 0;
+    color: #1f4f83;
+    font-size: 1.2rem;
+}
+
+#gm-logout-button {
+    padding: 9px 14px;
+    border: 1px solid #b8cae2;
+    border-radius: 8px;
+    background: #f4f8ff;
+    color: #2f547a;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#gm-logout-button:hover {
+    border-color: #8faed0;
+    background: #eaf2ff;
+}
+
+.gm-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.gm-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 1px solid #d8e3f1;
+    border-radius: 10px;
+    background: #ffffff;
+    padding: 12px;
+}
+
+.gm-panel h3 {
+    margin: 0;
+    color: #235489;
+    font-size: 1rem;
+}
+
+.gm-meta {
+    margin: 6px 0 8px;
+    font-size: 0.83rem;
+    color: #527195;
+}
+
+.gm-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.gm-player-card {
+    padding: 10px;
+    border: 1px solid #d3dfef;
+    border-radius: 8px;
+    background: #f8fbff;
+    margin-bottom: 8px;
+}
+
+.gm-player-card h4 {
+    margin: 0 0 4px;
+    color: #234b76;
+    font-size: 0.95rem;
+}
+
+.gm-player-seen-at {
+    margin: 0 0 6px;
+    color: #5a7597;
+    font-size: 0.8rem;
+}
+
+.gm-character-list {
+    margin: 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 4px;
+}
+
+.gm-character-list li {
+    font-size: 0.88rem;
+    color: #2a425f;
+    line-height: 1.35;
+}
+
+.gm-log-content {
+    margin: 0;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #d3dfef;
+    background: #f8fbff;
+    color: #223957;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.gm-empty {
+    margin: 0;
+    color: #56718f;
+    font-size: 0.88rem;
+    font-weight: 600;
+}

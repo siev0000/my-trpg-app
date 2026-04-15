@@ -39,6 +39,10 @@ app.get('/load.html', (req, res) => {
     res.sendFile(resolveHtmlPath('load.html'));
 });
 
+app.get('/gm.html', (req, res) => {
+    res.sendFile(resolveHtmlPath('gm.html'));
+});
+
 app.get('/favicon.ico', (req, res) => {
     const candidates = [
         path.join(distDir, 'favicon.ico'),
