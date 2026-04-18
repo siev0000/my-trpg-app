@@ -824,3 +824,5 @@ requestId	log-mo3v74w0-0cwupj
 
 12	34	56
 
+{"timestamp":"2026-04-18T10:48:10.416Z","requestId":"log-mo47rhdc-fkxh95","name":"クルーツェル","attackOption":"武器","fullPower":0,"skills":["防御","光の護り手","不落要塞","不動反射"],"rollResults":["94"]}
+{"timestamp":"2026-04-18T11:10:22.250Z","requestId":"log-mo48k10q-pkco2k","name":"リコリス","attackOption":"斬","fullPower":1,"skills":["魔法順位向上1ST"],"rollResults":["73","28"]}

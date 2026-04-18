@@ -3,7 +3,6 @@
     "version": "1.0.0",
     "main": "server.js",
     "scripts": {
-        "prestart": "npm run check:mojibake && npm run build",
         "start": "node server.js",
         "predev:api": "npm run check:mojibake",
         "dev:api": "cross-env PORT=3001 node server.js",
@@ -18,6 +17,7 @@
         "start:mongo": "node scripts/start-with-mongo.js --mode start",
         "dev:api:mongo": "node scripts/start-with-mongo.js --mode dev-api",
         "start:render": "node server.js",
+        "start:with-build": "npm run build && node server.js",
         "prebuild": "npm run check:mojibake",
         "build": "vite build",
         "preview": "vite preview"

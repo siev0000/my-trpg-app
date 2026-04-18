@@ -1,5 +1,5 @@
 const GM_TOKEN_KEY = "gmToken";
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 2500;
 const INFINITE_TURNS = 9999999;
 
 const gmLogoutButtonElement = document.getElementById("gm-logout-button");
@@ -19,6 +19,7 @@ let activeTabId = "log";
 let activeLogFormat = "block";
 let selectedCharacterContext = { playerId: "", characterName: "" };
 let latestConnectedPlayers = [];
+let lastDashboardUpdatedAt = "";
 const GM_DEBUG_ENABLED = true;
 let lastDashboardLogSignature = "";
 
@@ -878,7 +879,10 @@ async function fetchDashboard() {
     }
 
     try {
-        const response = await fetch("/api/gm/dashboard", {
+        const query = lastDashboardUpdatedAt
+            ? `?since=${encodeURIComponent(lastDashboardUpdatedAt)}`
+            : "";
+        const response = await fetch(`/api/gm/dashboard${query}`, {
             method: "GET",
             headers: { "x-gm-token": token }
         });
@@ -889,6 +893,16 @@ async function fetchDashboard() {
                 return;
             }
             throw new Error(data?.message || `gm dashboard error: ${response.status}`);
+        }
+        if (normalizeText(data?.updatedAt)) {
+            lastDashboardUpdatedAt = normalizeText(data.updatedAt);
+        }
+        if (data?.notModified) {
+            if (gmPresenceMetaElement) {
+                const players = Array.isArray(latestConnectedPlayers) ? latestConnectedPlayers.length : 0;
+                gmPresenceMetaElement.textContent = `更新: ${formatDisplayTime(data?.updatedAt)} / 接続 ${players} 人`;
+            }
+            return;
         }
 
         latestConnectedPlayers = Array.isArray(data?.connectedPlayers) ? data.connectedPlayers : [];

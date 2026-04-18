@@ -1993,6 +1993,36 @@ async function fetchSkillsByName(skillList) {
     }
 }
 
+function buildSkillEntryMapByName(skillEntries = []) {
+    const map = new Map();
+    (Array.isArray(skillEntries) ? skillEntries : []).forEach((entry) => {
+        if (!entry || typeof entry !== "object") return;
+        const name = normalizeBattleText(entry?.和名 || entry?.技名 || entry?.name);
+        if (!name) return;
+        if (!map.has(name)) {
+            map.set(name, []);
+        }
+        map.get(name).push(entry);
+    });
+    return map;
+}
+
+async function fetchSkillEntryMapByNames(skillNames = []) {
+    const uniqueNames = Array.from(new Set(
+        (Array.isArray(skillNames) ? skillNames : [skillNames])
+            .map((name) => normalizeBattleText(name))
+            .filter(Boolean)
+    ));
+    if (!uniqueNames.length) {
+        return new Map();
+    }
+    const fetched = await fetchSkillsByName(uniqueNames);
+    const fetchedList = Array.isArray(fetched)
+        ? fetched.filter((entry) => entry && typeof entry === "object")
+        : (fetched && typeof fetched === "object" ? [fetched] : []);
+    return buildSkillEntryMapByName(fetchedList);
+}
+
 //パッシブ振り分け
 function passiveForEach(skillsP){
     // 例: skills.P に格納されたスキルの JSON
@@ -2284,13 +2314,21 @@ async function resolvePresetSkillEntryByName(slot, skillName) {
 async function buildSelectedSkillsFromPreset(source) {
     const presetSkillNames = normalizeSelectedSkillsFromPreset(source);
     const nextSkills = createDefaultSelectedSkills();
-    const resolvedEntries = await Promise.all(
-        SELECTED_SKILL_SLOT_ORDER.map(async (slot) => {
-            const skillName = presetSkillNames?.[slot] || "";
-            const skillEntry = await resolvePresetSkillEntryByName(slot, skillName);
-            return [slot, skillEntry];
-        })
-    );
+    const presetNames = SELECTED_SKILL_SLOT_ORDER
+        .map((slot) => presetSkillNames?.[slot] || "")
+        .map((name) => normalizeBattleText(name))
+        .filter(Boolean);
+    const entryMap = await fetchSkillEntryMapByNames(presetNames);
+    const resolvedEntries = SELECTED_SKILL_SLOT_ORDER.map((slot) => {
+        const skillName = normalizeBattleText(presetSkillNames?.[slot] || "");
+        if (!skillName) return [slot, null];
+        const skillList = Array.isArray(entryMap.get(skillName))
+            ? entryMap.get(skillName)
+            : [];
+        if (!skillList.length) return [slot, null];
+        const selectedEntry = pickSkillEntryForPresetSlot(slot, skillList);
+        return [slot, wrapSkillEntryForSelectedSlot(slot, selectedEntry)];
+    });
 
     resolvedEntries.forEach(([slot, skillEntry]) => {
         nextSkills[slot] = skillEntry;

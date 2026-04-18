@@ -1,3 +1,4 @@
+const fs = require("fs");
 const path = require("path");
 
 function normalizeBool(value, fallback = false) {
@@ -6,6 +7,56 @@ function normalizeBool(value, fallback = false) {
     if (["1", "true", "yes", "on"].includes(text)) return true;
     if (["0", "false", "no", "off"].includes(text)) return false;
     return fallback;
+}
+
+let cachedFileEnvMap = null;
+
+function parseEnvFile(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) return {};
+    const raw = fs.readFileSync(filePath, "utf8");
+    const entries = {};
+    String(raw || "")
+        .split(/\r?\n/g)
+        .forEach((line) => {
+            const text = String(line || "").trim();
+            if (!text || text.startsWith("#")) return;
+            const eq = text.indexOf("=");
+            if (eq <= 0) return;
+            const key = text.slice(0, eq).trim();
+            let value = text.slice(eq + 1).trim();
+            if (!key) return;
+            if (
+                (value.startsWith('"') && value.endsWith('"'))
+                || (value.startsWith("'") && value.endsWith("'"))
+            ) {
+                value = value.slice(1, -1);
+            }
+            entries[key] = value;
+        });
+    return entries;
+}
+
+function getFileEnvMap() {
+    if (cachedFileEnvMap) return cachedFileEnvMap;
+    const fileNames = [".env", ".env.local", ".env.mongodb.local"];
+    const merged = {};
+    fileNames.forEach((fileName) => {
+        const filePath = path.resolve(process.cwd(), fileName);
+        Object.assign(merged, parseEnvFile(filePath));
+    });
+    cachedFileEnvMap = merged;
+    return cachedFileEnvMap;
+}
+
+function getConfigValue(key) {
+    const processValue = process.env[key];
+    if (processValue !== undefined && processValue !== null && String(processValue).trim() !== "") {
+        return String(processValue);
+    }
+    const fileEnv = getFileEnvMap();
+    const fileValue = fileEnv?.[key];
+    if (fileValue === undefined || fileValue === null) return "";
+    return String(fileValue);
 }
 
 function getAppDataRoot() {
@@ -21,9 +72,9 @@ function getLogsDirPath() {
 }
 
 function getMongoConfig() {
-    const uri = String(process.env.MONGODB_URI || process.env.MONGO_URI || "").trim();
-    const dbName = String(process.env.MONGODB_DB || "my_trpg_app").trim() || "my_trpg_app";
-    const enabled = normalizeBool(process.env.USE_MONGODB, false);
+    const uri = String(getConfigValue("MONGODB_URI") || getConfigValue("MONGO_URI") || "").trim();
+    const dbName = String(getConfigValue("MONGODB_DB") || "my_trpg_app").trim() || "my_trpg_app";
+    const enabled = normalizeBool(getConfigValue("USE_MONGODB"), Boolean(uri));
     return {
         enabled,
         uri,
@@ -37,4 +88,3 @@ module.exports = {
     getMongoConfig,
     normalizeBool
 };
-

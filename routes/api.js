@@ -29,6 +29,12 @@ const GM_LOGIN_ID = 'siev';
 const GM_LOGIN_PASSWORD = '11';
 const GM_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PLAYER_ACTIVE_TTL_MS = 3 * 60 * 1000;
+const GM_DASHBOARD_LOG_LIMIT = 500;
+const MONGO_COLLECTION = {
+    presence: 'Presence',
+    battleState: 'BattleState',
+    selectDataLog: 'SelectDataLog'
+};
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
@@ -87,6 +93,12 @@ function normalizeNameList(values) {
             .map((value) => normalizeText(value))
             .filter(Boolean)
     ));
+}
+
+function normalizeItemLookupName(value) {
+    const normalized = normalizeText(value);
+    if (!normalized) return '';
+    return normalized.replace(/[\[［].*$/, '').trim();
 }
 
 function normalizePresetIconName(value) {
@@ -1154,8 +1166,378 @@ function getStoryConnectedPlayerList(options = {}) {
     return getPresenceList(storyConnectedPlayerMap, options);
 }
 
+function canUseMongoStateStore() {
+    return Boolean(
+        useMongoPrimaryData
+        && String(mongoConfig?.uri || '').trim()
+    );
+}
+
+function normalizePresenceDoc(doc = {}) {
+    const source = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
+    const playerId = normalizeText(source?.playerId);
+    if (!playerId) return null;
+    const nowMs = Date.now();
+    return {
+        playerId,
+        characterNames: normalizeNameList(source?.characterNames),
+        selectedCharacterName: normalizeText(source?.selectedCharacterName),
+        firstSeenAtMs: Number(source?.firstSeenAtMs) || nowMs,
+        lastSeenAtMs: Number(source?.lastSeenAtMs) || nowMs
+    };
+}
+
+async function upsertPresenceMongo(scope = 'default', entry = {}) {
+    if (!canUseMongoStateStore()) return;
+    const normalizedScope = normalizeText(scope) || 'default';
+    const normalizedEntry = normalizePresenceDoc(entry);
+    if (!normalizedEntry) return;
+    const nowIso = new Date().toISOString();
+    await withMongoClient(async ({ db }) => {
+        await db.collection(MONGO_COLLECTION.presence).updateOne(
+            {
+                scope: normalizedScope,
+                playerId: normalizedEntry.playerId
+            },
+            {
+                $set: {
+                    scope: normalizedScope,
+                    playerId: normalizedEntry.playerId,
+                    characterNames: normalizedEntry.characterNames,
+                    selectedCharacterName: normalizedEntry.selectedCharacterName,
+                    firstSeenAtMs: normalizedEntry.firstSeenAtMs,
+                    lastSeenAtMs: normalizedEntry.lastSeenAtMs,
+                    updatedAt: nowIso,
+                    updatedAtMs: Date.now()
+                }
+            },
+            { upsert: true }
+        );
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+}
+
+async function removePresenceMongo(playerId, scope = '') {
+    if (!canUseMongoStateStore()) return false;
+    const normalizedPlayerId = normalizeText(playerId);
+    if (!normalizedPlayerId) return false;
+    const normalizedScope = normalizeText(scope).toLowerCase();
+    const filter = { playerId: normalizedPlayerId };
+    if (normalizedScope) {
+        filter.scope = normalizedScope;
+    }
+    const result = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.presence).deleteMany(filter);
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return Number(result?.deletedCount || 0) > 0;
+}
+
+async function refreshPresenceMapFromMongo(targetMap, scope = 'default') {
+    if (!(targetMap instanceof Map) || !canUseMongoStateStore()) return;
+    const nowMs = Date.now();
+    const cutoffMs = nowMs - PLAYER_ACTIVE_TTL_MS;
+    const normalizedScope = normalizeText(scope) || 'default';
+    const docs = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.presence)
+            .find({
+                scope: normalizedScope,
+                lastSeenAtMs: { $gte: cutoffMs }
+            })
+            .toArray();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    targetMap.clear();
+    (Array.isArray(docs) ? docs : []).forEach((doc) => {
+        const entry = normalizePresenceDoc(doc);
+        if (!entry) return;
+        targetMap.set(entry.playerId, entry);
+    });
+}
+
+async function getStoryPresenceUpdatedAtMsFromMongo() {
+    if (!canUseMongoStateStore()) return 0;
+    const cutoffMs = Date.now() - PLAYER_ACTIVE_TTL_MS;
+    const doc = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.presence)
+            .find({
+                scope: 'story',
+                lastSeenAtMs: { $gte: cutoffMs }
+            }, {
+                projection: { updatedAtMs: 1, lastSeenAtMs: 1 }
+            })
+            .sort({ updatedAtMs: -1, lastSeenAtMs: -1 })
+            .limit(1)
+            .next();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return Math.floor(Number(doc?.updatedAtMs || doc?.lastSeenAtMs || 0));
+}
+
+async function readBattleStateStoreFromMongo(options = {}) {
+    if (!canUseMongoStateStore()) {
+        return { version: 1, updatedAt: null, states: {} };
+    }
+    const playerId = normalizeText(options?.playerId);
+    const filter = playerId ? { playerId } : {};
+    const docs = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.battleState)
+            .find(filter)
+            .toArray();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+
+    const states = {};
+    let latestUpdatedAtMs = 0;
+    (Array.isArray(docs) ? docs : []).forEach((doc) => {
+        const rowPlayerId = normalizeText(doc?.playerId);
+        const rowCharacterName = normalizeText(doc?.characterName);
+        if (!rowPlayerId || !rowCharacterName) return;
+        if (!states[rowPlayerId] || typeof states[rowPlayerId] !== 'object') {
+            states[rowPlayerId] = {};
+        }
+        states[rowPlayerId][rowCharacterName] = normalizeBattleStateCharacterEntry(doc?.state || {});
+        const updatedAtMs = Math.floor(Number(doc?.updatedAtMs || 0));
+        if (updatedAtMs > latestUpdatedAtMs) {
+            latestUpdatedAtMs = updatedAtMs;
+        }
+    });
+
+    return {
+        version: 1,
+        updatedAt: latestUpdatedAtMs > 0 ? new Date(latestUpdatedAtMs).toISOString() : null,
+        states: normalizeBattleStateStoreStates(states)
+    };
+}
+
+async function saveBattleStateEntryToMongo(playerId, characterName, state = {}) {
+    if (!canUseMongoStateStore()) return null;
+    const normalizedPlayerId = normalizeText(playerId);
+    const normalizedCharacterName = normalizeText(characterName);
+    if (!normalizedPlayerId || !normalizedCharacterName) return null;
+    const updatedAtMs = Date.now();
+    const updatedAt = new Date(updatedAtMs).toISOString();
+    const normalizedState = normalizeBattleStateCharacterEntry(state);
+
+    await withMongoClient(async ({ db }) => {
+        await db.collection(MONGO_COLLECTION.battleState).updateOne(
+            {
+                playerId: normalizedPlayerId,
+                characterName: normalizedCharacterName
+            },
+            {
+                $set: {
+                    playerId: normalizedPlayerId,
+                    characterName: normalizedCharacterName,
+                    state: normalizedState,
+                    updatedAt,
+                    updatedAtMs
+                }
+            },
+            { upsert: true }
+        );
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+
+    return { updatedAt, updatedAtMs, state: normalizedState };
+}
+
+async function getBattleStateUpdatedAtMsFromMongo() {
+    if (!canUseMongoStateStore()) return 0;
+    const doc = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.battleState)
+            .find({}, { projection: { updatedAtMs: 1 } })
+            .sort({ updatedAtMs: -1 })
+            .limit(1)
+            .next();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return Math.floor(Number(doc?.updatedAtMs || 0));
+}
+
+function buildSelectDataLogRowForMongo(logEntry = {}) {
+    const source = logEntry && typeof logEntry === 'object' && !Array.isArray(logEntry) ? logEntry : {};
+    const timestamp = normalizeText(source?.timestamp) || new Date().toISOString();
+    const parsedTimestampMs = Date.parse(timestamp);
+    const timestampMs = Number.isFinite(parsedTimestampMs) ? parsedTimestampMs : Date.now();
+    const fullPowerNumeric = Number(source?.fullPower);
+    const fullPower = Number.isFinite(fullPowerNumeric)
+        ? (fullPowerNumeric !== 0 ? 1 : 0)
+        : (normalizeText(source?.fullPower).toLowerCase() === 'true' ? 1 : 0);
+    return {
+        timestamp,
+        timestampMs,
+        requestId: normalizeText(source?.requestId),
+        name: sanitizeTsvValue(source?.name),
+        attackOption: sanitizeTsvValue(source?.attackOption),
+        fullPower,
+        skills: (Array.isArray(source?.skills) ? source.skills : [])
+            .map((name) => normalizeText(name))
+            .filter(Boolean),
+        rollResults: (Array.isArray(source?.rollResults) ? source.rollResults : [])
+            .map((result) => sanitizeTsvValue(result))
+            .filter((result) => result !== '')
+    };
+}
+
+async function appendSelectDataLogToMongo(logEntry = {}) {
+    if (!canUseMongoStateStore()) return null;
+    const row = buildSelectDataLogRowForMongo(logEntry);
+    await withMongoClient(async ({ db }) => {
+        await db.collection(MONGO_COLLECTION.selectDataLog).insertOne({
+            ...row,
+            updatedAt: new Date().toISOString(),
+            updatedAtMs: Date.now()
+        });
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return row;
+}
+
+async function readSelectDataLogSnapshotFromMongo() {
+    if (!canUseMongoStateStore()) {
+        return { exists: false, updatedAt: null, mtimeMs: 0, text: '' };
+    }
+    const docs = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.selectDataLog)
+            .find({})
+            .sort({ timestampMs: -1, _id: -1 })
+            .limit(GM_DASHBOARD_LOG_LIMIT)
+            .toArray();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    const rows = (Array.isArray(docs) ? docs : [])
+        .map((doc) => buildSelectDataLogRowForMongo(doc))
+        .sort((a, b) => Number(a.timestampMs || 0) - Number(b.timestampMs || 0));
+    const latestMs = rows.length > 0
+        ? Math.max(...rows.map((row) => Number(row.timestampMs || 0)))
+        : 0;
+    const text = rows.map((row) => JSON.stringify({
+        timestamp: row.timestamp,
+        requestId: row.requestId,
+        name: row.name,
+        attackOption: row.attackOption,
+        fullPower: row.fullPower,
+        skills: row.skills,
+        rollResults: row.rollResults
+    })).join('\n');
+    return {
+        exists: rows.length > 0,
+        updatedAt: latestMs > 0 ? new Date(latestMs).toISOString() : null,
+        mtimeMs: latestMs,
+        text
+    };
+}
+
+async function getSelectDataLogUpdatedAtMsFromMongo() {
+    if (!canUseMongoStateStore()) return 0;
+    const doc = await withMongoClient(async ({ db }) => {
+        return db.collection(MONGO_COLLECTION.selectDataLog)
+            .find({}, { projection: { timestampMs: 1, updatedAtMs: 1 } })
+            .sort({ timestampMs: -1, updatedAtMs: -1, _id: -1 })
+            .limit(1)
+            .next();
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return Math.floor(Number(doc?.timestampMs || doc?.updatedAtMs || 0));
+}
+
+async function getGmDashboardUpdatedAtMsAsync() {
+    if (!canUseMongoStateStore()) {
+        return getGmDashboardUpdatedAtMs();
+    }
+    const [selectMs, battleMs, presenceMs] = await Promise.all([
+        getSelectDataLogUpdatedAtMsFromMongo(),
+        getBattleStateUpdatedAtMsFromMongo(),
+        getStoryPresenceUpdatedAtMsFromMongo()
+    ]);
+    return resolveLatestMs([selectMs, battleMs, presenceMs]);
+}
+
+function getFileUpdatedMeta(filePath) {
+    if (!fs.existsSync(filePath)) {
+        return { exists: false, mtimeMs: 0, updatedAt: null };
+    }
+    try {
+        const stat = fs.statSync(filePath);
+        const mtimeMs = Math.floor(Number(stat?.mtimeMs) || 0);
+        return {
+            exists: true,
+            mtimeMs,
+            updatedAt: mtimeMs > 0 ? new Date(mtimeMs).toISOString() : null
+        };
+    } catch (error) {
+        return { exists: true, mtimeMs: 0, updatedAt: null };
+    }
+}
+
+function resolveLatestMs(values = []) {
+    let latest = 0;
+    (Array.isArray(values) ? values : []).forEach((value) => {
+        const numeric = Math.floor(Number(value) || 0);
+        if (Number.isFinite(numeric) && numeric > latest) {
+            latest = numeric;
+        }
+    });
+    return latest;
+}
+
+function getStoryPresenceUpdatedAtMs() {
+    prunePresenceMap(storyConnectedPlayerMap, Date.now());
+    const values = Array.from(storyConnectedPlayerMap.values())
+        .map((entry) => Number(entry?.lastSeenAtMs) || 0);
+    return resolveLatestMs(values);
+}
+
+function getGmDashboardUpdatedAtMs() {
+    const selectMeta = getFileUpdatedMeta(selectDataLogPath);
+    const battleStateMeta = getFileUpdatedMeta(battleStateJsonPath);
+    const memoMeta = getFileUpdatedMeta(battleMemoJsonPath);
+    const storyPresenceMs = getStoryPresenceUpdatedAtMs();
+    return resolveLatestMs([
+        selectMeta.mtimeMs,
+        battleStateMeta.mtimeMs,
+        memoMeta.mtimeMs,
+        storyPresenceMs
+    ]);
+}
+
+let selectDataLogSnapshotCache = {
+    exists: false,
+    updatedAt: null,
+    mtimeMs: 0,
+    text: ''
+};
+
 function readSelectDataLogSnapshot() {
-    if (!fs.existsSync(selectDataLogPath)) {
+    const meta = getFileUpdatedMeta(selectDataLogPath);
+    if (!meta.exists) {
+        selectDataLogSnapshotCache = {
+            exists: false,
+            updatedAt: null,
+            mtimeMs: 0,
+            text: ''
+        };
         return {
             exists: false,
             updatedAt: null,
@@ -1164,23 +1546,27 @@ function readSelectDataLogSnapshot() {
         };
     }
     try {
-        const stat = fs.statSync(selectDataLogPath);
-        const mtimeMs = Number(stat?.mtimeMs) || 0;
-        const updatedAt = mtimeMs > 0 ? new Date(mtimeMs).toISOString() : null;
+        if (
+            Number(meta.mtimeMs) > 0
+            && Number(meta.mtimeMs) === Number(selectDataLogSnapshotCache?.mtimeMs)
+        ) {
+            return { ...selectDataLogSnapshotCache };
+        }
         const text = fs.readFileSync(selectDataLogPath, 'utf8');
-        return {
+        selectDataLogSnapshotCache = {
             exists: true,
-            updatedAt,
-            mtimeMs,
+            updatedAt: meta.updatedAt,
+            mtimeMs: meta.mtimeMs,
             text: String(text ?? '')
         };
+        return { ...selectDataLogSnapshotCache };
     } catch (error) {
         console.error('read select_dataLog snapshot error:', error);
         return {
             exists: true,
-            updatedAt: null,
-            mtimeMs: 0,
-            text: ''
+            updatedAt: meta.updatedAt,
+            mtimeMs: meta.mtimeMs,
+            text: selectDataLogSnapshotCache?.text || ''
         };
     }
 }
@@ -1196,6 +1582,7 @@ let cachedTeam = [];
 let cachedBattle = [];
 let cachedBody = [];
 let mongoPrimaryReloadInProgress = false;
+let mongoPrimaryReloadPromise = null;
 let mongoPrimaryLastLoadedAtMs = 0;
 const MONGO_PRIMARY_POLL_MS = 30 * 1000;
 
@@ -1235,32 +1622,189 @@ function normalizeMongoItemRow(row = {}) {
     return normalized;
 }
 
+function normalizeMongoSkillRow(row = {}) {
+    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const normalized = { ...source };
+    if (!pickFirstText(normalized, FIELD_KEYS.skillName)) {
+        normalized.和名 = normalizeMongoIdValue(source?._id);
+    }
+    return normalized;
+}
+
+async function fetchSkillsByNamesFromMongo(skillNames = []) {
+    if (!useMongoPrimaryData) return [];
+    const normalizedNames = Array.from(new Set(
+        (Array.isArray(skillNames) ? skillNames : [skillNames])
+            .map((name) => normalizeText(name))
+            .filter(Boolean)
+    ));
+    if (!normalizedNames.length) return [];
+
+    try {
+        const docs = await withMongoClient(async ({ db }) => {
+            return db.collection('Skill')
+                .find({ 和名: { $in: normalizedNames } })
+                .toArray();
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+        return (Array.isArray(docs) ? docs : []).map((row) => normalizeMongoSkillRow(row));
+    } catch (error) {
+        console.error('[mongo] skill by names load failed:', error?.message || error);
+        return [];
+    }
+}
+
+async function fetchItemsByNamesFromMongo(itemNames = []) {
+    if (!useMongoPrimaryData) return [];
+    const normalizedNames = Array.from(new Set(
+        (Array.isArray(itemNames) ? itemNames : [itemNames])
+            .map((name) => normalizeItemLookupName(name))
+            .filter(Boolean)
+    ));
+    if (!normalizedNames.length) return [];
+
+    try {
+        const docs = await withMongoClient(async ({ db }) => {
+            return db.collection('ItemList')
+                .find({
+                    $or: [
+                        { 名前: { $in: normalizedNames } },
+                        { name: { $in: normalizedNames } }
+                    ]
+                })
+                .toArray();
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+        return (Array.isArray(docs) ? docs : []).map((row) => normalizeMongoItemRow(row));
+    } catch (error) {
+        console.error('[mongo] item by names load failed:', error?.message || error);
+        return [];
+    }
+}
+
 async function loadMongoPrimaryData(forceReload = false) {
     if (!useMongoPrimaryData) return false;
-    if (mongoPrimaryReloadInProgress) return false;
+    if (mongoPrimaryReloadInProgress && mongoPrimaryReloadPromise) {
+        return mongoPrimaryReloadPromise;
+    }
     if (!forceReload && (Date.now() - mongoPrimaryLastLoadedAtMs) < (MONGO_PRIMARY_POLL_MS / 2)) {
         return false;
     }
 
     mongoPrimaryReloadInProgress = true;
+    mongoPrimaryReloadPromise = (async () => {
+        try {
+            const loaded = await withMongoClient(async ({ db }) => {
+                const [users, characters, items, skills] = await Promise.all([
+                    db.collection('User').find({}).toArray(),
+                    db.collection('Character').find({}).toArray(),
+                    db.collection('ItemList').find({}).toArray(),
+                    db.collection('Skill').find({}).toArray()
+                ]);
+
+                cachedUsers = (Array.isArray(users) ? users : []).map((row) => normalizeMongoUserRow(row));
+                cachedCharacters = (Array.isArray(characters) ? characters : []).map((row) => normalizeMongoCharacterRow(row));
+                cachedItems = dedupeBy(
+                    (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
+                    (item) => pickFirstText(item, FIELD_KEYS.name)
+                );
+                cachedSkills = dedupeBy(
+                    (Array.isArray(skills) ? skills : []).map((row) => normalizeMongoSkillRow(row)),
+                    (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
+                );
+                return {
+                    users: cachedUsers.length,
+                    characters: cachedCharacters.length,
+                    items: cachedItems.length,
+                    skills: cachedSkills.length
+                };
+            }, {
+                uri: mongoConfig.uri,
+                dbName: mongoConfig.dbName
+            });
+
+            mongoPrimaryLastLoadedAtMs = Date.now();
+            console.log(`[mongo] primary loaded users=${loaded.users} characters=${loaded.characters} items=${loaded.items} skills=${loaded.skills}`);
+            return true;
+        } catch (error) {
+            console.error('[mongo] primary load failed:', error?.message || error);
+            return false;
+        } finally {
+            mongoPrimaryReloadInProgress = false;
+            mongoPrimaryReloadPromise = null;
+        }
+    })();
+
+    return mongoPrimaryReloadPromise;
+}
+
+async function loadMongoRequestedData(options = {}) {
+    if (!useMongoPrimaryData) return false;
+    const requestUsers = Boolean(options?.users);
+    const requestCharacters = Boolean(options?.characters);
+    const requestItems = Boolean(options?.items);
+    const requestSkills = Boolean(options?.skills);
+    if (!requestUsers && !requestCharacters && !requestItems && !requestSkills) {
+        return false;
+    }
+    if (mongoPrimaryReloadInProgress && mongoPrimaryReloadPromise) {
+        const hasUsers = !requestUsers || (Array.isArray(cachedUsers) && cachedUsers.length > 0);
+        const hasCharacters = !requestCharacters || (Array.isArray(cachedCharacters) && cachedCharacters.length > 0);
+        const hasItems = !requestItems || (Array.isArray(cachedItems) && cachedItems.length > 0);
+        const hasSkills = !requestSkills || (Array.isArray(cachedSkills) && cachedSkills.length > 0);
+        if (hasUsers && hasCharacters && hasItems && hasSkills) {
+            return true;
+        }
+        // 初回全件ロード中でも、必要データが無ければ個別ロードを優先して待ち時間を減らす。
+    }
+
     try {
         const loaded = await withMongoClient(async ({ db }) => {
-            const [users, characters, items] = await Promise.all([
-                db.collection('User').find({}).toArray(),
-                db.collection('Character').find({}).toArray(),
-                db.collection('ItemList').find({}).toArray()
-            ]);
-
-            cachedUsers = (Array.isArray(users) ? users : []).map((row) => normalizeMongoUserRow(row));
-            cachedCharacters = (Array.isArray(characters) ? characters : []).map((row) => normalizeMongoCharacterRow(row));
-            cachedItems = dedupeBy(
-                (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
-                (item) => pickFirstText(item, FIELD_KEYS.name)
-            );
+            const jobs = [];
+            if (requestUsers) {
+                jobs.push(
+                    db.collection('User').find({}).toArray().then((users) => {
+                        cachedUsers = (Array.isArray(users) ? users : []).map((row) => normalizeMongoUserRow(row));
+                    })
+                );
+            }
+            if (requestCharacters) {
+                jobs.push(
+                    db.collection('Character').find({}).toArray().then((characters) => {
+                        cachedCharacters = (Array.isArray(characters) ? characters : []).map((row) => normalizeMongoCharacterRow(row));
+                    })
+                );
+            }
+            if (requestItems) {
+                jobs.push(
+                    db.collection('ItemList').find({}).toArray().then((items) => {
+                        cachedItems = dedupeBy(
+                            (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
+                            (item) => pickFirstText(item, FIELD_KEYS.name)
+                        );
+                    })
+                );
+            }
+            if (requestSkills) {
+                jobs.push(
+                    db.collection('Skill').find({}).toArray().then((skills) => {
+                        cachedSkills = dedupeBy(
+                            (Array.isArray(skills) ? skills : []).map((row) => normalizeMongoSkillRow(row)),
+                            (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
+                        );
+                    })
+                );
+            }
+            await Promise.all(jobs);
             return {
-                users: cachedUsers.length,
-                characters: cachedCharacters.length,
-                items: cachedItems.length
+                users: requestUsers ? cachedUsers.length : null,
+                characters: requestCharacters ? cachedCharacters.length : null,
+                items: requestItems ? cachedItems.length : null,
+                skills: requestSkills ? cachedSkills.length : null
             };
         }, {
             uri: mongoConfig.uri,
@@ -1268,14 +1812,38 @@ async function loadMongoPrimaryData(forceReload = false) {
         });
 
         mongoPrimaryLastLoadedAtMs = Date.now();
-        console.log(`[mongo] primary loaded users=${loaded.users} characters=${loaded.characters} items=${loaded.items}`);
+        console.log(
+            `[mongo] targeted loaded`
+            + `${requestUsers ? ` users=${loaded.users}` : ''}`
+            + `${requestCharacters ? ` characters=${loaded.characters}` : ''}`
+            + `${requestItems ? ` items=${loaded.items}` : ''}`
+            + `${requestSkills ? ` skills=${loaded.skills}` : ''}`
+        );
         return true;
     } catch (error) {
-        console.error('[mongo] primary load failed:', error?.message || error);
+        console.error('[mongo] targeted load failed:', error?.message || error);
         return false;
-    } finally {
-        mongoPrimaryReloadInProgress = false;
     }
+}
+
+async function ensureMongoPrimaryCache(options = {}) {
+    if (!useMongoPrimaryData) return;
+
+    const needsUsers = Boolean(options?.users) && (!Array.isArray(cachedUsers) || cachedUsers.length === 0);
+    const needsCharacters = Boolean(options?.characters) && (!Array.isArray(cachedCharacters) || cachedCharacters.length === 0);
+    const needsItems = Boolean(options?.items) && (!Array.isArray(cachedItems) || cachedItems.length === 0);
+    const needsSkills = Boolean(options?.skills) && (!Array.isArray(cachedSkills) || cachedSkills.length === 0);
+    const forceReload = needsUsers || needsCharacters || needsItems || needsSkills;
+
+    if (forceReload) {
+        await loadMongoRequestedData(options);
+        return;
+    }
+
+    // キャッシュが既にある場合、更新はバックグラウンドで行いレスポンス待ちを避ける。
+    loadMongoPrimaryData(false).catch((error) => {
+        console.error('[mongo] background refresh failed:', error?.message || error);
+    });
 }
 
 // Excel 再読込制御
@@ -1305,20 +1873,38 @@ function loadExcelData(forceReload = false) {
     try {
         const workbook = XLSX.readFile(filePath);
 
-        const excelUsers = readSheet(workbook, SHEET_NAMES.user, null);
-        const excelCharacters = readSheet(workbook, SHEET_NAMES.character, null);
+        const needsExcelPrimaryFallback = (
+            !useMongoPrimaryData
+            || !Array.isArray(cachedUsers) || cachedUsers.length === 0
+            || !Array.isArray(cachedCharacters) || cachedCharacters.length === 0
+            || !Array.isArray(cachedItems) || cachedItems.length === 0
+        );
+        const excelUsers = needsExcelPrimaryFallback
+            ? readSheet(workbook, SHEET_NAMES.user, null)
+            : null;
+        const excelCharacters = needsExcelPrimaryFallback
+            ? readSheet(workbook, SHEET_NAMES.character, null)
+            : null;
+        const needsExcelSkillFallback = (
+            !useMongoPrimaryData
+            || !Array.isArray(cachedSkills) || cachedSkills.length === 0
+        );
+        const excelSkills = needsExcelSkillFallback
+            ? dedupeBy(
+                readSheet(workbook, SHEET_NAMES.skills, 0),
+                (item) => pickFirstText(item, FIELD_KEYS.skillName)
+            )
+            : null;
         cachedClasses = dedupeBy(
             readSheet(workbook, SHEET_NAMES.classes, 0),
             (item) => pickFirstText(item, FIELD_KEYS.className)
         );
-        cachedSkills = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.skills, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.skillName)
-        );
-        const excelItems = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.items, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.name)
-        );
+        const excelItems = needsExcelPrimaryFallback
+            ? dedupeBy(
+                readSheet(workbook, SHEET_NAMES.items, 0),
+                (item) => pickFirstText(item, FIELD_KEYS.name)
+            )
+            : null;
         cachedShop = dedupeBy(
             readSheet(workbook, SHEET_NAMES.shop, 0),
             (item) => pickFirstText(item, FIELD_KEYS.skillName)
@@ -1339,15 +1925,19 @@ function loadExcelData(forceReload = false) {
         if (!useMongoPrimaryData) {
             cachedUsers = excelUsers;
             cachedCharacters = excelCharacters;
+            cachedSkills = excelSkills;
             cachedItems = excelItems;
         } else {
-            if (!Array.isArray(cachedUsers) || cachedUsers.length === 0) {
+            if ((!Array.isArray(cachedUsers) || cachedUsers.length === 0) && Array.isArray(excelUsers)) {
                 cachedUsers = excelUsers;
             }
-            if (!Array.isArray(cachedCharacters) || cachedCharacters.length === 0) {
+            if ((!Array.isArray(cachedCharacters) || cachedCharacters.length === 0) && Array.isArray(excelCharacters)) {
                 cachedCharacters = excelCharacters;
             }
-            if (!Array.isArray(cachedItems) || cachedItems.length === 0) {
+            if ((!Array.isArray(cachedSkills) || cachedSkills.length === 0) && Array.isArray(excelSkills)) {
+                cachedSkills = excelSkills;
+            }
+            if ((!Array.isArray(cachedItems) || cachedItems.length === 0) && Array.isArray(excelItems)) {
                 cachedItems = excelItems;
             }
         }
@@ -1397,9 +1987,17 @@ function watchExcelFile() {
     }
 }
 
-loadExcelData(true);
-if (useMongoPrimaryData) {
-    loadMongoPrimaryData(true);
+function ensureExcelReferenceCacheLoaded() {
+    const hasClasses = Array.isArray(cachedClasses) && cachedClasses.length > 0;
+    const hasBody = Array.isArray(cachedBody) && cachedBody.length > 0;
+    if (hasClasses && hasBody) {
+        return;
+    }
+    loadExcelData(true);
+}
+
+if (!useMongoPrimaryData) {
+    loadExcelData(true);
 }
 setInterval(() => {
     loadExcelData(false);
@@ -1413,6 +2011,10 @@ watchExcelFile();
 
 // 監視取りこぼし時の最終保険
 router.use((req, res, next) => {
+    if (useMongoPrimaryData) {
+        next();
+        return;
+    }
     const currentMtimeMs = getExcelMtimeMs();
     if (currentMtimeMs && currentMtimeMs !== excelLastMtimeMs) {
         loadExcelData(true);
@@ -1420,8 +2022,9 @@ router.use((req, res, next) => {
     next();
 });
 
-router.get('/character', (req, res) => {
+router.get('/character', async (req, res) => {
     try {
+        await ensureMongoPrimaryCache({ characters: true });
         const characterName = normalizeText(req.query.name);
         if (!characterName) {
             return res.status(400).json({ success: false, message: 'name is required' });
@@ -1451,104 +2054,149 @@ router.get('/character', (req, res) => {
     }
 });
 
-router.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    const normalizedUsername = normalizeText(username);
-    const normalizedPassword = normalizeText(password);
+router.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        const normalizedUsername = normalizeText(username);
+        const normalizedPassword = normalizeText(password);
 
-    if (normalizedUsername === GM_LOGIN_ID && normalizedPassword === GM_LOGIN_PASSWORD) {
-        const gmToken = createGmSessionToken();
+        if (normalizedUsername === GM_LOGIN_ID && normalizedPassword === GM_LOGIN_PASSWORD) {
+            const gmToken = createGmSessionToken();
+            return res.status(200).send({
+                message: 'GMログイン成功',
+                mode: 'gm',
+                gmToken
+            });
+        }
+
+        await ensureMongoPrimaryCache({ users: true, characters: true });
+
+        const user = cachedUsers.find(
+            (u) => normalizeText(u.ID) === normalizedUsername
+                && normalizeText(u.password) === normalizedPassword
+        );
+
+        if (!user) {
+            return res.status(401).send({ message: 'invalid id or password' });
+        }
+
+        const characters = buildLoginCharactersForUser(user);
+        upsertConnectedPlayer(
+            normalizedUsername,
+            characters.map((character) => normalizeText(character?.名前)),
+            { replaceCharacterNames: true }
+        );
+
         return res.status(200).send({
-            message: 'GMログイン成功',
-            mode: 'gm',
-            gmToken
+            message: 'ログイン成功',
+            mode: 'player',
+            characters
         });
+    } catch (error) {
+        console.error('login error:', error);
+        return res.status(500).send({ message: 'login failed' });
     }
-
-    const user = cachedUsers.find(
-        (u) => normalizeText(u.ID) === normalizedUsername
-            && normalizeText(u.password) === normalizedPassword
-    );
-
-    if (!user) {
-        return res.status(401).send({ message: 'invalid id or password' });
-    }
-
-    const characters = buildLoginCharactersForUser(user);
-    upsertConnectedPlayer(
-        normalizedUsername,
-        characters.map((character) => normalizeText(character?.名前)),
-        { replaceCharacterNames: true }
-    );
-
-    return res.status(200).send({
-        message: 'ログイン成功',
-        mode: 'player',
-        characters
-    });
 });
 
-router.post('/skills', (req, res) => {
-    let { skillNames } = req.body;
-    if (!Array.isArray(skillNames)) {
-        skillNames = [skillNames];
+router.post('/skills', async (req, res) => {
+    try {
+        let { skillNames } = req.body;
+        if (!Array.isArray(skillNames)) {
+            skillNames = [skillNames];
+        }
+        const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
+        let sourceSkills = cachedSkills;
+        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
+            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
+        } else {
+            await ensureMongoPrimaryCache({ skills: true });
+            sourceSkills = cachedSkills;
+        }
+
+        const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
+            .reduce((grouped, skill) => {
+                const type = pickFirstText(skill, FIELD_KEYS.skillType);
+                if (!type) return grouped;
+                if (!grouped[type]) grouped[type] = [];
+                grouped[type].push(skill);
+                return grouped;
+            }, {});
+
+        return res.json({ success: true, skills: matchedSkills });
+    } catch (error) {
+        console.error('skills fetch error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch skills' });
     }
-    const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-
-    const matchedSkills = cachedSkills
-        .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
-        .reduce((grouped, skill) => {
-            const type = pickFirstText(skill, FIELD_KEYS.skillType);
-            if (!type) return grouped;
-            if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(skill);
-            return grouped;
-        }, {});
-
-    res.json({ success: true, skills: matchedSkills });
 });
 
-router.post('/getSkillByName', (req, res) => {
-    let { skillNames } = req.body;
-    if (!Array.isArray(skillNames)) {
-        skillNames = [skillNames];
+router.post('/getSkillByName', async (req, res) => {
+    try {
+        let { skillNames } = req.body;
+        if (!Array.isArray(skillNames)) {
+            skillNames = [skillNames];
+        }
+
+        if (!skillNames || skillNames.length === 0) {
+            return res.status(400).json({ success: false, message: 'skillNames is required' });
+        }
+
+        const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
+        let sourceSkills = cachedSkills;
+        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
+            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
+        } else {
+            await ensureMongoPrimaryCache({ skills: true });
+            sourceSkills = cachedSkills;
+        }
+        const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)));
+
+        if (matchedSkills.length === 0) {
+            return res.status(404).json({ success: false, message: 'skills not found' });
+        }
+
+        return res.json({ success: true, skills: matchedSkills });
+    } catch (error) {
+        console.error('getSkillByName error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch skills' });
     }
-
-    if (!skillNames || skillNames.length === 0) {
-        return res.status(400).json({ success: false, message: 'skillNames is required' });
-    }
-
-    const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-    const matchedSkills = cachedSkills.filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)));
-
-    if (matchedSkills.length === 0) {
-        return res.status(404).json({ success: false, message: 'skills not found' });
-    }
-
-    res.json({ success: true, skills: matchedSkills });
 });
 
-router.post('/magics', (req, res) => {
-    let { skillNames } = req.body;
-    if (!Array.isArray(skillNames)) {
-        skillNames = [skillNames];
+router.post('/magics', async (req, res) => {
+    try {
+        let { skillNames } = req.body;
+        if (!Array.isArray(skillNames)) {
+            skillNames = [skillNames];
+        }
+        const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
+        let sourceSkills = cachedSkills;
+        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
+            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
+        } else {
+            await ensureMongoPrimaryCache({ skills: true });
+            sourceSkills = cachedSkills;
+        }
+
+        const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
+            .reduce((grouped, skill) => {
+                const type = pickFirstText(skill, FIELD_KEYS.skillType);
+                if (!type) return grouped;
+                if (!grouped[type]) grouped[type] = [];
+                grouped[type].push(skill);
+                return grouped;
+            }, {});
+
+        return res.json({ success: true, skills: matchedSkills });
+    } catch (error) {
+        console.error('magics fetch error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch magics' });
     }
-    const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-
-    const matchedSkills = cachedSkills
-        .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
-        .reduce((grouped, skill) => {
-            const type = pickFirstText(skill, FIELD_KEYS.skillType);
-            if (!type) return grouped;
-            if (!grouped[type]) grouped[type] = [];
-            grouped[type].push(skill);
-            return grouped;
-        }, {});
-
-    res.json({ success: true, skills: matchedSkills });
 });
 
 router.post('/classes', (req, res) => {
+    ensureExcelReferenceCacheLoaded();
     const { classList } = req.body;
     const classesToMatch = Array.isArray(classList) ? classList : [classList];
     const nameSet = new Set(classesToMatch.map((name) => normalizeText(name)).filter(Boolean));
@@ -1562,6 +2210,7 @@ router.post('/classes', (req, res) => {
 
 router.post('/body', (req, res) => {
     try {
+        ensureExcelReferenceCacheLoaded();
         const { bodyTypeList } = req.body;
         const typesToMatch = Array.isArray(bodyTypeList)
             ? bodyTypeList.map((v) => normalizeText(v)).filter(Boolean)
@@ -1579,26 +2228,54 @@ router.post('/body', (req, res) => {
     }
 });
 
-router.post('/items', (req, res) => {
-    const { itemList } = req.body;
-    const itemsToMatch = Array.isArray(itemList) ? itemList : [itemList];
+router.post('/items', async (req, res) => {
+    try {
+        const { itemList } = req.body;
+        const itemsToMatch = (Array.isArray(itemList) ? itemList : [itemList])
+            .map((itemName) => normalizeItemLookupName(itemName))
+            .filter(Boolean);
 
-    if (!cachedItems || !Array.isArray(cachedItems)) {
-        console.error('cachedItems is invalid');
+        if (!itemsToMatch.length) {
+            return res.json({ success: true, itemData: [] });
+        }
+
+        if (useMongoPrimaryData) {
+            const mongoItems = await fetchItemsByNamesFromMongo(itemsToMatch);
+            const groupedByName = new Map();
+            (Array.isArray(mongoItems) ? mongoItems : []).forEach((itemData) => {
+                const name = pickFirstText(itemData, FIELD_KEYS.name);
+                if (!name) return;
+                if (!groupedByName.has(name)) groupedByName.set(name, []);
+                groupedByName.get(name).push(itemData);
+            });
+
+            const matchedItems = [];
+            itemsToMatch.forEach((itemName) => {
+                const foundItems = groupedByName.get(itemName) || [];
+                matchedItems.push(...foundItems);
+            });
+
+            return res.json({ success: true, itemData: matchedItems });
+        }
+
+        if (!cachedItems || !Array.isArray(cachedItems)) {
+            console.error('cachedItems is invalid');
+            return res.status(500).json({ success: false, message: 'failed to fetch item data' });
+        }
+
+        const matchedItems = [];
+        itemsToMatch.forEach((itemName) => {
+            const foundItems = cachedItems.filter(
+                (itemData) => pickFirstText(itemData, FIELD_KEYS.name) === itemName
+            );
+            matchedItems.push(...foundItems);
+        });
+
+        return res.json({ success: true, itemData: matchedItems });
+    } catch (error) {
+        console.error('items fetch error:', error);
         return res.status(500).json({ success: false, message: 'failed to fetch item data' });
     }
-
-    const matchedItems = [];
-    itemsToMatch.forEach((itemName) => {
-        if (!itemName) return;
-        const cleanedItemName = String(itemName).split('[')[0].trim();
-        const foundItems = cachedItems.filter(
-            (itemData) => pickFirstText(itemData, FIELD_KEYS.name) === cleanedItemName
-        );
-        matchedItems.push(...foundItems);
-    });
-
-    res.json({ success: true, itemData: matchedItems });
 });
 
 router.post('/update-data', (req, res) => {
@@ -1995,7 +2672,7 @@ router.post('/skill-set/rename', (req, res) => {
     }
 });
 
-router.post('/battle-state/load', (req, res) => {
+router.post('/battle-state/load', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const requestedCharacterNames = (Array.isArray(req.body?.characterNames) ? req.body.characterNames : [])
@@ -2006,7 +2683,9 @@ router.post('/battle-state/load', (req, res) => {
         });
         const requestedSet = new Set(requestedCharacterNames);
 
-        const store = readBattleStateStore();
+        const store = canUseMongoStateStore()
+            ? await readBattleStateStoreFromMongo({ playerId })
+            : readBattleStateStore();
         const playerStates = normalizeBattleStateCharacterCollection(store?.states?.[playerId] || {});
 
         const states = requestedSet.size > 0
@@ -2029,7 +2708,7 @@ router.post('/battle-state/load', (req, res) => {
     }
 });
 
-router.post('/battle-state/save', (req, res) => {
+router.post('/battle-state/save', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const characterName = normalizeText(req.body?.characterName);
@@ -2041,12 +2720,20 @@ router.post('/battle-state/save', (req, res) => {
         }
         upsertConnectedPlayer(playerId, [characterName]);
 
+        const normalizedState = normalizeBattleStateCharacterEntry(req.body?.state || {});
+        if (canUseMongoStateStore()) {
+            const saved = await saveBattleStateEntryToMongo(playerId, characterName, normalizedState);
+            return res.status(200).json({
+                success: true,
+                updatedAt: saved?.updatedAt || new Date().toISOString(),
+                state: normalizedState
+            });
+        }
+
         const store = readBattleStateStore();
         if (!store.states[playerId] || typeof store.states[playerId] !== 'object') {
             store.states[playerId] = {};
         }
-
-        const normalizedState = normalizeBattleStateCharacterEntry(req.body?.state || {});
         store.states[playerId][characterName] = normalizedState;
         store.updatedAt = new Date().toISOString();
         writeBattleStateStore(store);
@@ -2065,7 +2752,7 @@ router.post('/battle-state/save', (req, res) => {
     }
 });
 
-router.post('/presence/heartbeat', (req, res) => {
+router.post('/presence/heartbeat', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId);
         const scope = normalizeText(req.body?.scope).toLowerCase();
@@ -2079,6 +2766,9 @@ router.post('/presence/heartbeat', (req, res) => {
             replaceCharacterNames: characterNames.length > 0,
             selectedCharacterName
         });
+        if (canUseMongoStateStore() && entry) {
+            await upsertPresenceMongo(useStoryScope ? 'story' : 'default', entry);
+        }
         return res.status(200).json({
             success: true,
             scope: useStoryScope ? 'story' : 'default',
@@ -2096,7 +2786,7 @@ router.post('/presence/heartbeat', (req, res) => {
     }
 });
 
-router.post('/presence/disconnect', (req, res) => {
+router.post('/presence/disconnect', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId);
         const scope = normalizeText(req.body?.scope).toLowerCase();
@@ -2109,6 +2799,10 @@ router.post('/presence/disconnect', (req, res) => {
             const removedDefault = removeConnectedPlayer(playerId);
             const removedStory = removeStoryConnectedPlayer(playerId);
             removed = removedDefault || removedStory;
+        }
+        if (canUseMongoStateStore()) {
+            const mongoRemoved = await removePresenceMongo(playerId, scope);
+            removed = removed || mongoRemoved;
         }
         return res.status(200).json({
             success: true,
@@ -2123,7 +2817,7 @@ router.post('/presence/disconnect', (req, res) => {
     }
 });
 
-router.get('/gm/dashboard', (req, res) => {
+router.get('/gm/dashboard', async (req, res) => {
     try {
         const token = normalizeText(req.get('x-gm-token') || req.query?.token);
         if (!hasValidGmSessionToken(token)) {
@@ -2133,15 +2827,37 @@ router.get('/gm/dashboard', (req, res) => {
             });
         }
 
-        const selectDataLog = readSelectDataLogSnapshot();
-        const battleStateStore = readBattleStateStore();
+        const sinceMs = Date.parse(normalizeText(req.query?.since));
+        const dashboardUpdatedAtMs = await getGmDashboardUpdatedAtMsAsync();
+        const dashboardUpdatedAt = dashboardUpdatedAtMs > 0
+            ? new Date(dashboardUpdatedAtMs).toISOString()
+            : new Date().toISOString();
+        if (Number.isFinite(sinceMs) && sinceMs >= dashboardUpdatedAtMs && dashboardUpdatedAtMs > 0) {
+            return res.status(200).json({
+                success: true,
+                notModified: true,
+                updatedAt: dashboardUpdatedAt
+            });
+        }
+
+        await ensureMongoPrimaryCache({ characters: true, skills: true });
+        if (canUseMongoStateStore()) {
+            await refreshPresenceMapFromMongo(storyConnectedPlayerMap, 'story');
+        }
+        const selectDataLog = canUseMongoStateStore()
+            ? await readSelectDataLogSnapshotFromMongo()
+            : readSelectDataLogSnapshot();
+        const battleStateStore = canUseMongoStateStore()
+            ? await readBattleStateStoreFromMongo()
+            : readBattleStateStore();
         const connectedPlayers = getStoryConnectedPlayerList({
             includeBattleState: true,
             battleStateStore
         });
         return res.status(200).json({
             success: true,
-            updatedAt: new Date().toISOString(),
+            notModified: false,
+            updatedAt: dashboardUpdatedAt,
             connectedPlayers,
             selectDataLog
         });
@@ -2154,7 +2870,7 @@ router.get('/gm/dashboard', (req, res) => {
     }
 });
 
-router.post('/select_dataLog', (req, res) => {
+router.post('/select_dataLog', async (req, res) => {
     try {
         const payload = req.body?.skillNames || {};
         const now = new Date();
@@ -2180,6 +2896,9 @@ router.post('/select_dataLog', (req, res) => {
             rollResults
         };
 
+        if (canUseMongoStateStore()) {
+            await appendSelectDataLogToMongo(logEntry);
+        }
         fs.mkdirSync(path.dirname(selectDataLogPath), { recursive: true });
         fs.appendFileSync(selectDataLogPath, `${JSON.stringify(logEntry)}\n`, 'utf8');
 

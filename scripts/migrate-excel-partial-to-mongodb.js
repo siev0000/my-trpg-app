@@ -6,7 +6,8 @@ const { getMongoConfig } = require("../storage/config");
 const SHEETS = {
     Character: "キャラクター",
     User: "userID",
-    ItemList: "装備"
+    ItemList: "装備",
+    Skill: "スキル"
 };
 
 const CHARACTER_EXCLUDE_KEYS = new Set([
@@ -77,7 +78,7 @@ function normalizeTargets(rawTargets = "") {
         .map((entry) => normalizeText(entry).toLowerCase())
         .filter(Boolean);
     if (list.length === 0) {
-        return new Set(["character", "user", "itemlist"]);
+        return new Set(["character", "user", "itemlist", "skill"]);
     }
     return new Set(list);
 }
@@ -95,7 +96,19 @@ function normalizeKeyForCompare(key) {
 function readSheetRows(workbook, sheetName) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) return [];
-    return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    if (!rows.length) return [];
+    const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
+    const firstColHeaderCell = sheet[XLSX.utils.encode_cell({ c: range.s.c, r: range.s.r })];
+    const aColumnHeader = normalizeText(firstColHeaderCell?.w ?? firstColHeaderCell?.v ?? "");
+    if (!aColumnHeader) return rows;
+
+    return rows.filter((row) => Boolean(normalizeText(row?.[aColumnHeader])));
+}
+
+function hasSheet(workbook, sheetName) {
+    return Boolean(workbook?.Sheets?.[sheetName]);
 }
 
 function pickStableId(row = {}, keys = [], fallbackPrefix = "row", index = 0) {
@@ -165,6 +178,24 @@ function transformItemRows(rows = []) {
     return ensureUniqueIds(docs);
 }
 
+function transformSkillRows(rows = []) {
+    const docs = rows
+        .map((row, index) => {
+            const source = row && typeof row === "object" ? row : {};
+            const next = {};
+            Object.entries(source).forEach(([key, value]) => {
+                const normalizedKey = normalizeKeyForCompare(key);
+                if (!normalizedKey) return;
+                if (normalizedKey.startsWith("__EMPTY")) return;
+                next[key] = value;
+            });
+            const _id = pickStableId(source, ["和名", "名前", "ID"], "skill", index);
+            return { _id, ...next };
+        })
+        .filter((row) => normalizeText(row?._id));
+    return ensureUniqueIds(docs);
+}
+
 async function replaceCollectionWithDocs(db, collectionName, docs = [], options = {}) {
     const collection = db.collection(collectionName);
     if (options?.dryRun) {
@@ -196,20 +227,27 @@ async function main() {
     const targets = normalizeTargets(args.targets);
 
     const workbook = XLSX.readFile(excelPath);
+    const hasCharacterSheet = hasSheet(workbook, SHEETS.Character);
+    const hasUserSheet = hasSheet(workbook, SHEETS.User);
+    const hasItemSheet = hasSheet(workbook, SHEETS.ItemList);
+    const hasSkillSheet = hasSheet(workbook, SHEETS.Skill);
     const characterRows = readSheetRows(workbook, SHEETS.Character);
     const userRows = readSheetRows(workbook, SHEETS.User);
     const itemRows = readSheetRows(workbook, SHEETS.ItemList);
+    const skillRows = readSheetRows(workbook, SHEETS.Skill);
 
     const characterDocs = transformCharacterRows(characterRows);
     const userDocs = transformUserRows(userRows);
     const itemDocs = transformItemRows(itemRows);
+    const skillDocs = transformSkillRows(skillRows);
 
     console.log(`[mongo:excel] excel=${excelPath}`);
     console.log(`[mongo:excel] db=${dbName}`);
     console.log(`[mongo:excel] dryRun=${args.dryRun ? "true" : "false"}`);
     console.log(`[mongo:excel] targets=${Array.from(targets).join(",")}`);
-    console.log(`[mongo:excel] sourceRows Character=${characterRows.length} User=${userRows.length} ItemList=${itemRows.length}`);
-    console.log(`[mongo:excel] docs Character=${characterDocs.length} User=${userDocs.length} ItemList=${itemDocs.length}`);
+    console.log(`[mongo:excel] sheets Character=${hasCharacterSheet ? "found" : "missing"} User=${hasUserSheet ? "found" : "missing"} ItemList=${hasItemSheet ? "found" : "missing"} Skill=${hasSkillSheet ? "found" : "missing"}`);
+    console.log(`[mongo:excel] sourceRows Character=${characterRows.length} User=${userRows.length} ItemList=${itemRows.length} Skill=${skillRows.length}`);
+    console.log(`[mongo:excel] docs Character=${characterDocs.length} User=${userDocs.length} ItemList=${itemDocs.length} Skill=${skillDocs.length}`);
 
     const sampleCharacter = characterDocs[0] || {};
     const hasExcluded =
@@ -225,25 +263,39 @@ async function main() {
     }
 
     await withMongoClient(async ({ db }) => {
-        const characterResult = targets.has("character")
+        const characterResult = (targets.has("character") && hasCharacterSheet)
             ? await replaceCollectionWithDocs(db, "Character", characterDocs, { dryRun: args.dryRun })
             : null;
-        const userResult = targets.has("user")
+        const userResult = (targets.has("user") && hasUserSheet)
             ? await replaceCollectionWithDocs(db, "User", userDocs, { dryRun: args.dryRun })
             : null;
-        const itemResult = targets.has("itemlist")
+        const itemResult = (targets.has("itemlist") && hasItemSheet)
             ? await replaceCollectionWithDocs(db, "ItemList", itemDocs, { dryRun: args.dryRun })
+            : null;
+        const skillResult = (targets.has("skill") && hasSkillSheet)
+            ? await replaceCollectionWithDocs(db, "Skill", skillDocs, { dryRun: args.dryRun })
             : null;
 
         console.log("[mongo:excel] summary:");
         if (characterResult) {
             console.log(`- Character deleted=${characterResult.deletedCount} inserted=${characterResult.insertedCount} dryRun=${characterResult.dryRun ? "true" : "false"}`);
+        } else if (targets.has("character") && !hasCharacterSheet) {
+            console.log("- Character skipped (sheet missing)");
         }
         if (userResult) {
             console.log(`- User deleted=${userResult.deletedCount} inserted=${userResult.insertedCount} dryRun=${userResult.dryRun ? "true" : "false"}`);
+        } else if (targets.has("user") && !hasUserSheet) {
+            console.log("- User skipped (sheet missing)");
         }
         if (itemResult) {
             console.log(`- ItemList deleted=${itemResult.deletedCount} inserted=${itemResult.insertedCount} dryRun=${itemResult.dryRun ? "true" : "false"}`);
+        } else if (targets.has("itemlist") && !hasItemSheet) {
+            console.log("- ItemList skipped (sheet missing)");
+        }
+        if (skillResult) {
+            console.log(`- Skill deleted=${skillResult.deletedCount} inserted=${skillResult.insertedCount} dryRun=${skillResult.dryRun ? "true" : "false"}`);
+        } else if (targets.has("skill") && !hasSkillSheet) {
+            console.log("- Skill skipped (sheet missing)");
         }
     }, {
         dbName,
