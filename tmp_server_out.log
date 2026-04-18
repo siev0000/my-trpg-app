@@ -1,0 +1,7 @@
+[storage] appDataRoot=C:\Users\skkt3\ドキュメント\Github\my-trpg-app
+[storage] logsDir=C:\Users\skkt3\ドキュメント\Github\my-trpg-app\logs
+[storage] useMongoDB=false
+[storage] mongoPrimaryData=false
+Excel data loaded successfully
+[excel] watching C:\Users\skkt3\ドキュメント\Github\my-trpg-app\data.xlsx
+Server is running on http://localhost:3111
