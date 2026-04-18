@@ -3,15 +3,18 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
+const { getAppDataRoot, getLogsDirPath, getMongoConfig } = require('../storage/config');
+const { withMongoClient } = require('../storage/mongo-client');
 
 const filePath = './data.xlsx';
 const excelAbsolutePath = path.resolve(filePath);
-const appDataRoot = path.resolve(
-    process.env.APP_DATA_DIR
-    || process.env.DATA_DIR
-    || process.cwd()
+const appDataRoot = getAppDataRoot();
+const logsDirPath = getLogsDirPath();
+const mongoConfig = getMongoConfig();
+const useMongoPrimaryData = Boolean(
+    mongoConfig.enabled
+    && String(mongoConfig?.uri || '').trim()
 );
-const logsDirPath = path.join(appDataRoot, 'logs');
 const selectDataLogPath = path.join(logsDirPath, 'select_dataLog.txt');
 const battleMemoJsonPath = path.join(logsDirPath, 'battle-memo.json');
 const characterProfileJsonPath = path.join(logsDirPath, 'character-profiles.json');
@@ -30,6 +33,8 @@ const PLAYER_ACTIVE_TTL_MS = 3 * 60 * 1000;
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
 console.log(`[storage] logsDir=${logsDirPath}`);
+console.log(`[storage] useMongoDB=${mongoConfig.enabled ? 'true' : 'false'}`);
+console.log(`[storage] mongoPrimaryData=${useMongoPrimaryData ? 'true' : 'false'}`);
 
 const SHEET_NAMES = {
     user: ['userID'],
@@ -1190,6 +1195,88 @@ let cachedShop = [];
 let cachedTeam = [];
 let cachedBattle = [];
 let cachedBody = [];
+let mongoPrimaryReloadInProgress = false;
+let mongoPrimaryLastLoadedAtMs = 0;
+const MONGO_PRIMARY_POLL_MS = 30 * 1000;
+
+function normalizeMongoIdValue(value) {
+    if (typeof value === 'string') return value;
+    if (value === null || value === undefined) return '';
+    if (typeof value?.toString === 'function') {
+        return String(value.toString());
+    }
+    return String(value);
+}
+
+function normalizeMongoUserRow(row = {}) {
+    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const normalized = { ...source };
+    if (!normalizeText(normalized?.ID)) {
+        normalized.ID = normalizeMongoIdValue(source?._id);
+    }
+    return normalized;
+}
+
+function normalizeMongoCharacterRow(row = {}) {
+    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const normalized = { ...source };
+    if (!pickFirstText(normalized, FIELD_KEYS.name)) {
+        normalized.名前 = normalizeMongoIdValue(source?._id);
+    }
+    return normalized;
+}
+
+function normalizeMongoItemRow(row = {}) {
+    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const normalized = { ...source };
+    if (!pickFirstText(normalized, FIELD_KEYS.name)) {
+        normalized.名前 = normalizeMongoIdValue(source?._id);
+    }
+    return normalized;
+}
+
+async function loadMongoPrimaryData(forceReload = false) {
+    if (!useMongoPrimaryData) return false;
+    if (mongoPrimaryReloadInProgress) return false;
+    if (!forceReload && (Date.now() - mongoPrimaryLastLoadedAtMs) < (MONGO_PRIMARY_POLL_MS / 2)) {
+        return false;
+    }
+
+    mongoPrimaryReloadInProgress = true;
+    try {
+        const loaded = await withMongoClient(async ({ db }) => {
+            const [users, characters, items] = await Promise.all([
+                db.collection('User').find({}).toArray(),
+                db.collection('Character').find({}).toArray(),
+                db.collection('ItemList').find({}).toArray()
+            ]);
+
+            cachedUsers = (Array.isArray(users) ? users : []).map((row) => normalizeMongoUserRow(row));
+            cachedCharacters = (Array.isArray(characters) ? characters : []).map((row) => normalizeMongoCharacterRow(row));
+            cachedItems = dedupeBy(
+                (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
+                (item) => pickFirstText(item, FIELD_KEYS.name)
+            );
+            return {
+                users: cachedUsers.length,
+                characters: cachedCharacters.length,
+                items: cachedItems.length
+            };
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        mongoPrimaryLastLoadedAtMs = Date.now();
+        console.log(`[mongo] primary loaded users=${loaded.users} characters=${loaded.characters} items=${loaded.items}`);
+        return true;
+    } catch (error) {
+        console.error('[mongo] primary load failed:', error?.message || error);
+        return false;
+    } finally {
+        mongoPrimaryReloadInProgress = false;
+    }
+}
 
 // Excel 再読込制御
 let excelLastMtimeMs = 0;
@@ -1218,8 +1305,8 @@ function loadExcelData(forceReload = false) {
     try {
         const workbook = XLSX.readFile(filePath);
 
-        cachedUsers = readSheet(workbook, SHEET_NAMES.user, null);
-        cachedCharacters = readSheet(workbook, SHEET_NAMES.character, null);
+        const excelUsers = readSheet(workbook, SHEET_NAMES.user, null);
+        const excelCharacters = readSheet(workbook, SHEET_NAMES.character, null);
         cachedClasses = dedupeBy(
             readSheet(workbook, SHEET_NAMES.classes, 0),
             (item) => pickFirstText(item, FIELD_KEYS.className)
@@ -1228,7 +1315,7 @@ function loadExcelData(forceReload = false) {
             readSheet(workbook, SHEET_NAMES.skills, 0),
             (item) => pickFirstText(item, FIELD_KEYS.skillName)
         );
-        cachedItems = dedupeBy(
+        const excelItems = dedupeBy(
             readSheet(workbook, SHEET_NAMES.items, 0),
             (item) => pickFirstText(item, FIELD_KEYS.name)
         );
@@ -1248,6 +1335,22 @@ function loadExcelData(forceReload = false) {
             readSheet(workbook, SHEET_NAMES.body, 0),
             (item) => pickFirstText(item, FIELD_KEYS.bodyNo)
         );
+
+        if (!useMongoPrimaryData) {
+            cachedUsers = excelUsers;
+            cachedCharacters = excelCharacters;
+            cachedItems = excelItems;
+        } else {
+            if (!Array.isArray(cachedUsers) || cachedUsers.length === 0) {
+                cachedUsers = excelUsers;
+            }
+            if (!Array.isArray(cachedCharacters) || cachedCharacters.length === 0) {
+                cachedCharacters = excelCharacters;
+            }
+            if (!Array.isArray(cachedItems) || cachedItems.length === 0) {
+                cachedItems = excelItems;
+            }
+        }
 
         excelLastMtimeMs = currentMtimeMs || getExcelMtimeMs();
         console.log('Excel data loaded successfully');
@@ -1295,7 +1398,17 @@ function watchExcelFile() {
 }
 
 loadExcelData(true);
-setInterval(() => loadExcelData(false), 60 * 60 * 1000);
+if (useMongoPrimaryData) {
+    loadMongoPrimaryData(true);
+}
+setInterval(() => {
+    loadExcelData(false);
+}, 60 * 60 * 1000);
+if (useMongoPrimaryData) {
+    setInterval(() => {
+        loadMongoPrimaryData(false);
+    }, MONGO_PRIMARY_POLL_MS);
+}
 watchExcelFile();
 
 // 監視取りこぼし時の最終保険
@@ -2047,26 +2160,28 @@ router.post('/select_dataLog', (req, res) => {
         const now = new Date();
         const timestamp = now.toISOString();
         const requestId = `log-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-        const skills = Array.isArray(payload.skills) ? payload.skills : [];
-        const rollResults = Array.isArray(payload.rollResults) ? payload.rollResults : [];
-        const skillLines = skills
-            .map((skill) => sanitizeTsvValue(skill?.name))
-            .filter((name) => name !== '');
-        const diceLine = rollResults.map((result) => sanitizeTsvValue(result)).join('\t');
-        const block = [
-            `timestamp\t${sanitizeTsvValue(timestamp)}`,
-            `requestId\t${sanitizeTsvValue(requestId)}`,
-            sanitizeTsvValue(payload.name),
-            sanitizeTsvValue(payload.attackOption),
-            sanitizeTsvValue(payload.fullPower ? 1 : 0),
-            ...skillLines,
-            '',
-            diceLine,
-            ''
-        ].join('\n');
+        const skillsRaw = Array.isArray(payload.skills) ? payload.skills : [];
+        const skillNames = skillsRaw
+            .map((skill) => {
+                if (typeof skill === 'string') return normalizeText(skill);
+                return normalizeText(skill?.name || skill?.skillName || skill?.skill || '');
+            })
+            .filter(Boolean);
+        const rollResults = (Array.isArray(payload.rollResults) ? payload.rollResults : [])
+            .map((result) => sanitizeTsvValue(result))
+            .filter((result) => result !== '');
+        const logEntry = {
+            timestamp,
+            requestId,
+            name: sanitizeTsvValue(payload.name),
+            attackOption: sanitizeTsvValue(payload.attackOption),
+            fullPower: payload.fullPower ? 1 : 0,
+            skills: skillNames,
+            rollResults
+        };
 
         fs.mkdirSync(path.dirname(selectDataLogPath), { recursive: true });
-        fs.appendFileSync(selectDataLogPath, `${block}\n`, 'utf8');
+        fs.appendFileSync(selectDataLogPath, `${JSON.stringify(logEntry)}\n`, 'utf8');
 
         res.status(200).json({
             success: true,

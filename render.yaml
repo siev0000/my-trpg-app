@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: my-trpg-app
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:render
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: NODE_ENV
+        value: production
+      - key: USE_MONGODB
+        value: "true"
+      - key: MONGODB_DB
+        value: TRPG
+      - key: MONGODB_URI
+        sync: false

@@ -689,7 +689,7 @@ function renderLog(selectDataLog = {}) {
     }
     const rawText = String(selectDataLog?.text ?? "");
     const parsedRows = parseSelectDataLogRows(rawText);
-    const blockTsv = buildSelectDataLogBlockTsv(rawText);
+    const blockTsv = buildSelectDataLogBlockTsv(parsedRows);
     const excelTsv = buildSelectDataLogExcelTsv(parsedRows);
     updateLogTextarea(gmLogExcelBlockContentElement, blockTsv);
     updateLogTextarea(gmLogExcelRowContentElement, excelTsv);
@@ -706,6 +706,43 @@ function updateLogTextarea(element, nextValue = "") {
 function parseSelectDataLogRows(rawText = "") {
     const normalized = String(rawText || "").replace(/\r\n/g, "\n");
     if (!normalized.trim()) return [];
+
+    const parseJsonLines = () => {
+        const rows = [];
+        normalized.split("\n").forEach((line) => {
+            const text = normalizeText(line);
+            if (!text || !text.startsWith("{")) return;
+            try {
+                const parsed = JSON.parse(text);
+                if (!parsed || typeof parsed !== "object") return;
+                const skillsRaw = Array.isArray(parsed?.skills) ? parsed.skills : [];
+                const skills = skillsRaw
+                    .map((skill) => {
+                        if (typeof skill === "string") return normalizeText(skill);
+                        return normalizeText(skill?.name || skill?.skillName || skill?.skill || "");
+                    })
+                    .filter(Boolean);
+                const diceResults = (Array.isArray(parsed?.rollResults) ? parsed.rollResults : [])
+                    .map((entry) => normalizeText(entry))
+                    .filter(Boolean);
+                rows.push({
+                    timestamp: normalizeText(parsed?.timestamp),
+                    requestId: normalizeText(parsed?.requestId),
+                    name: normalizeText(parsed?.name),
+                    attackOption: normalizeText(parsed?.attackOption),
+                    fullPower: normalizeText(parsed?.fullPower),
+                    skills,
+                    diceResults
+                });
+            } catch (error) {
+                // ignore malformed line
+            }
+        });
+        return rows;
+    };
+
+    const jsonRows = parseJsonLines();
+
     const blocks = normalized
         .split(/\n(?=timestamp\t)/g)
         .map((block) => block.trim())
@@ -758,7 +795,11 @@ function parseSelectDataLogRows(rawText = "") {
             diceResults
         });
     });
-    return rows;
+    if (rows.length > 0 && jsonRows.length > 0) {
+        return [...rows, ...jsonRows];
+    }
+    if (rows.length > 0) return rows;
+    return jsonRows;
 }
 
 function sanitizeTsvField(value) {
@@ -803,9 +844,30 @@ function buildSelectDataLogExcelTsv(rows = []) {
     return lines.join("\n");
 }
 
-function buildSelectDataLogBlockTsv(rawText = "") {
-    const normalized = String(rawText || "").replace(/\r\n/g, "\n");
-    return normalized.trim();
+function buildSelectDataLogBlockTsv(rows = []) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (safeRows.length === 0) return "";
+    const blocks = safeRows.map((row) => {
+        const skillLines = Array.isArray(row?.skills)
+            ? row.skills.map((name) => sanitizeTsvField(name)).filter(Boolean)
+            : [];
+        const diceLine = Array.isArray(row?.diceResults)
+            ? row.diceResults.map((entry) => sanitizeTsvField(entry)).join("\t")
+            : "";
+        const lines = [
+            `timestamp\t${sanitizeTsvField(row?.timestamp)}`,
+            `requestId\t${sanitizeTsvField(row?.requestId)}`,
+            sanitizeTsvField(row?.name),
+            sanitizeTsvField(row?.attackOption),
+            sanitizeTsvField(row?.fullPower),
+            ...skillLines,
+            "",
+            diceLine,
+            ""
+        ];
+        return lines.join("\n");
+    });
+    return blocks.join("\n");
 }
 
 async function fetchDashboard() {

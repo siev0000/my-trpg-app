@@ -43,6 +43,10 @@ app.get('/gm.html', (req, res) => {
     res.sendFile(resolveHtmlPath('gm.html'));
 });
 
+app.get('/healthz', (req, res) => {
+    res.status(200).json({ ok: true });
+});
+
 app.get('/favicon.ico', (req, res) => {
     const candidates = [
         path.join(distDir, 'favicon.ico'),

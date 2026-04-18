@@ -12,6 +12,12 @@
         "watch:mojibake": "node scripts/watch-mojibake.js",
         "dev:all": "concurrently -k \"npm:watch:mojibake\" \"npm:dev:api\" \"npm:dev\"",
         "check:mojibake": "node scripts/check-mojibake.js",
+        "mongo:ping": "node scripts/mongo-ping.js",
+        "mongo:migrate": "node scripts/migrate-json-to-mongodb.js",
+        "mongo:migrate:excel": "node scripts/migrate-excel-partial-to-mongodb.js",
+        "start:mongo": "node scripts/start-with-mongo.js --mode start",
+        "dev:api:mongo": "node scripts/start-with-mongo.js --mode dev-api",
+        "start:render": "node server.js",
         "prebuild": "npm run check:mojibake",
         "build": "vite build",
         "preview": "vite preview"
@@ -19,6 +25,7 @@
     "dependencies": {
         "cors": "^2.8.5",
         "express": "^4.21.1",
+        "mongodb": "^6.21.0",
         "vue": "^3.5.28",
         "xlsx": "^0.17.5"
     },

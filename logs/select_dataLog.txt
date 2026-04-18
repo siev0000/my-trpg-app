@@ -814,3 +814,13 @@ requestId	log-mo02m3nu-urj16w
 
 65	41	37
 
+timestamp	2026-04-18T04:56:25.728Z
+requestId	log-mo3v74w0-0cwupj
+テストキャラ
+武器
+1
+切断
+黒風白雨
+
+12	34	56
+
