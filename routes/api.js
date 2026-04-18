@@ -30,9 +30,15 @@ const GM_LOGIN_PASSWORD = '11';
 const GM_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const PLAYER_ACTIVE_TTL_MS = 3 * 60 * 1000;
 const GM_DASHBOARD_LOG_LIMIT = 500;
+const APP_STATE_COLLECTION = 'app_state';
+const APP_STATE_KEYS = {
+    battleMemo: 'battle-memo',
+    battleState: 'battle-state',
+    characterProfiles: 'character-profiles',
+    skillSetPresets: 'skill-set-presets'
+};
 const MONGO_COLLECTION = {
     presence: 'Presence',
-    battleState: 'BattleState',
     selectDataLog: 'SelectDataLog'
 };
 
@@ -85,6 +91,10 @@ function sanitizeTsvValue(value) {
 
 function normalizeText(value) {
     return String(value ?? '').trim();
+}
+
+function deepCloneJsonValue(value) {
+    return JSON.parse(JSON.stringify(value));
 }
 
 function normalizeNameList(values) {
@@ -183,6 +193,22 @@ function pickFirstValue(obj, keys, fallback = undefined) {
 function pickFirstText(obj, keys, fallback = '') {
     const value = pickFirstValue(obj, keys, fallback);
     return normalizeText(value);
+}
+
+function readJsonFileAsIs(filePath, fallbackValue) {
+    if (!fs.existsSync(filePath)) {
+        return deepCloneJsonValue(fallbackValue);
+    }
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!String(raw || '').trim()) {
+        return deepCloneJsonValue(fallbackValue);
+    }
+    try {
+        return JSON.parse(raw);
+    } catch (error) {
+        console.error(`read json parse error: ${filePath}`, error);
+        return deepCloneJsonValue(fallbackValue);
+    }
 }
 
 function readBattleMemoStore() {
@@ -489,7 +515,48 @@ function hasCharacterProfileDifference(a = {}, b = {}) {
     return JSON.stringify(normalizeCharacterProfileMap(a)) !== JSON.stringify(normalizeCharacterProfileMap(b));
 }
 
-function resolveCharacterProfilesForMemoStore(battleMemoStore = {}) {
+async function readCharacterProfileMapFromMongo(options = {}) {
+    if (!canUseMongoStateStore()) return {};
+    void options;
+    const store = await readCharacterProfileStoreForRuntime();
+    return normalizeCharacterProfileMap(store?.profiles);
+}
+
+async function writeCharacterProfileMapToMongo(playerId, profiles = {}, options = {}) {
+    void playerId;
+    const normalizedProfiles = normalizeCharacterProfileMap(profiles);
+    const updatedAt = normalizeText(options?.updatedAt) || new Date().toISOString();
+    await writeCharacterProfileStoreForRuntime({
+        version: 1,
+        updatedAt,
+        profiles: normalizedProfiles
+    });
+    return Object.keys(normalizedProfiles).length;
+}
+
+async function resolveCharacterProfilesForMemoStore(battleMemoStore = {}, options = {}) {
+    if (canUseMongoStateStore()) {
+        const playerId = normalizeText(options?.playerId) || 'guest';
+        const requestedCharacterNames = normalizeNameList(options?.characterNames);
+        const mongoProfiles = await readCharacterProfileMapFromMongo({
+            playerId,
+            characterNames: requestedCharacterNames
+        });
+        const embeddedProfiles = mergeCharacterProfileMaps(
+            normalizeCharacterProfileMap(battleMemoStore?.legacyCharacterProfiles),
+            collectEmbeddedProfilesFromMemoStore(battleMemoStore?.memos)
+        );
+        const mergedProfiles = mergeCharacterProfileMaps(mongoProfiles, embeddedProfiles);
+
+        if (hasCharacterProfileDifference(mongoProfiles, mergedProfiles)) {
+            await writeCharacterProfileMapToMongo(playerId, mergedProfiles, {
+                updatedAt: new Date().toISOString()
+            });
+        }
+
+        return mergedProfiles;
+    }
+
     const profileStore = readCharacterProfileStore();
     let profiles = normalizeCharacterProfileMap(profileStore.profiles);
     profiles = mergeCharacterProfileMaps(profiles, battleMemoStore?.legacyCharacterProfiles);
@@ -1173,6 +1240,220 @@ function canUseMongoStateStore() {
     );
 }
 
+function createDefaultBattleMemoStore() {
+    return { version: 1, updatedAt: null, memos: {}, legacyCharacterProfiles: {} };
+}
+
+function createDefaultBattleStateStore() {
+    return { version: 1, updatedAt: null, states: {} };
+}
+
+function createDefaultCharacterProfileStore() {
+    return { version: 1, updatedAt: null, profiles: {} };
+}
+
+function createDefaultSkillSetPresetStore() {
+    return { version: 1, updatedAt: null, presets: {} };
+}
+
+function normalizeBattleMemoStorePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const memos = (source.memos && typeof source.memos === 'object' && !Array.isArray(source.memos))
+        ? source.memos
+        : {};
+    const legacyCharacterProfiles = normalizeCharacterProfileMap(source?.characterProfiles);
+    return {
+        version: 1,
+        updatedAt: source?.updatedAt || null,
+        memos,
+        legacyCharacterProfiles
+    };
+}
+
+function normalizeCharacterProfileStorePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    return {
+        version: 1,
+        updatedAt: source?.updatedAt || null,
+        profiles: normalizeCharacterProfileMap(source?.profiles)
+    };
+}
+
+function normalizeSkillSetPresetStorePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    return {
+        version: 1,
+        updatedAt: source?.updatedAt || null,
+        presets: normalizeSkillSetPresetStorePresets(source?.presets)
+    };
+}
+
+function normalizeBattleStateStorePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const normalizedStates = normalizeBattleStateStoreStates(source?.states);
+    return {
+        version: 1,
+        updatedAt: source?.updatedAt || null,
+        states: normalizedStates
+    };
+}
+
+async function fetchAppStateDocFromMongo(stateKey) {
+    if (!canUseMongoStateStore()) return null;
+    const normalizedKey = normalizeText(stateKey);
+    if (!normalizedKey) return null;
+    return withMongoClient(async ({ db }) => {
+        return db.collection(APP_STATE_COLLECTION).findOne({ _id: normalizedKey });
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+}
+
+async function readAppStatePayloadFromMongo(stateKey, fallbackValue) {
+    const doc = await fetchAppStateDocFromMongo(stateKey);
+    if (!doc || typeof doc !== 'object') {
+        return deepCloneJsonValue(fallbackValue);
+    }
+    if (!Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        return deepCloneJsonValue(fallbackValue);
+    }
+    return doc.payload;
+}
+
+async function writeAppStatePayloadToMongo(stateKey, payload, options = {}) {
+    if (!canUseMongoStateStore()) return null;
+    const normalizedKey = normalizeText(stateKey);
+    if (!normalizedKey) return null;
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const providedUpdatedAt = normalizeText(options?.updatedAt);
+    const payloadUpdatedAt = providedUpdatedAt || normalizeText(payload?.updatedAt) || nowIso;
+    await withMongoClient(async ({ db }) => {
+        await db.collection(APP_STATE_COLLECTION).updateOne(
+            { _id: normalizedKey },
+            {
+                $set: {
+                    payload,
+                    payloadUpdatedAt,
+                    payloadUpdatedAtMs: Math.floor(Number(Date.parse(payloadUpdatedAt)) || nowMs),
+                    updatedAt: nowIso,
+                    updatedAtMs: nowMs,
+                    sourceType: 'json'
+                }
+            },
+            { upsert: true }
+        );
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    return {
+        updatedAt: nowIso,
+        updatedAtMs: nowMs,
+        payloadUpdatedAt
+    };
+}
+
+async function readBattleMemoStoreForRuntime() {
+    if (!canUseMongoStateStore()) {
+        return readBattleMemoStore();
+    }
+    const fallbackRaw = readJsonFileAsIs(
+        battleMemoJsonPath,
+        { version: 1, updatedAt: null, memos: {}, characterProfiles: {} }
+    );
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleMemo);
+    if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleMemo, fallbackRaw, {
+            updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
+        });
+        return normalizeBattleMemoStorePayload(fallbackRaw);
+    }
+    return normalizeBattleMemoStorePayload(doc.payload);
+}
+
+async function writeBattleMemoStoreForRuntime(store = {}) {
+    if (!canUseMongoStateStore()) {
+        writeBattleMemoStore(store);
+        return;
+    }
+    const payload = {
+        version: 1,
+        updatedAt: store?.updatedAt || new Date().toISOString(),
+        memos: (store && typeof store.memos === 'object' && !Array.isArray(store.memos)) ? store.memos : {}
+    };
+    await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleMemo, payload, {
+        updatedAt: payload.updatedAt
+    });
+}
+
+async function readCharacterProfileStoreForRuntime() {
+    if (!canUseMongoStateStore()) {
+        return readCharacterProfileStore();
+    }
+    const fallbackRaw = readJsonFileAsIs(
+        characterProfileJsonPath,
+        { version: 1, updatedAt: null, profiles: {} }
+    );
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.characterProfiles);
+    if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        await writeAppStatePayloadToMongo(APP_STATE_KEYS.characterProfiles, fallbackRaw, {
+            updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
+        });
+        return normalizeCharacterProfileStorePayload(fallbackRaw);
+    }
+    return normalizeCharacterProfileStorePayload(doc.payload);
+}
+
+async function writeCharacterProfileStoreForRuntime(store = {}) {
+    if (!canUseMongoStateStore()) {
+        writeCharacterProfileStore(store);
+        return;
+    }
+    const payload = {
+        version: 1,
+        updatedAt: store?.updatedAt || new Date().toISOString(),
+        profiles: normalizeCharacterProfileMap(store?.profiles)
+    };
+    await writeAppStatePayloadToMongo(APP_STATE_KEYS.characterProfiles, payload, {
+        updatedAt: payload.updatedAt
+    });
+}
+
+async function readSkillSetPresetStoreForRuntime() {
+    if (!canUseMongoStateStore()) {
+        return readSkillSetPresetStore();
+    }
+    const fallbackRaw = readJsonFileAsIs(
+        skillSetPresetJsonPath,
+        { version: 1, updatedAt: null, presets: {} }
+    );
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.skillSetPresets);
+    if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        await writeAppStatePayloadToMongo(APP_STATE_KEYS.skillSetPresets, fallbackRaw, {
+            updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
+        });
+        return normalizeSkillSetPresetStorePayload(fallbackRaw);
+    }
+    return normalizeSkillSetPresetStorePayload(doc.payload);
+}
+
+async function writeSkillSetPresetStoreForRuntime(store = {}) {
+    if (!canUseMongoStateStore()) {
+        writeSkillSetPresetStore(store);
+        return;
+    }
+    const payload = {
+        version: 1,
+        updatedAt: store?.updatedAt || new Date().toISOString(),
+        presets: normalizeSkillSetPresetStorePresets(store?.presets)
+    };
+    await writeAppStatePayloadToMongo(APP_STATE_KEYS.skillSetPresets, payload, {
+        updatedAt: payload.updatedAt
+    });
+}
+
 function normalizePresenceDoc(doc = {}) {
     const source = doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
     const playerId = normalizeText(source?.playerId);
@@ -1286,38 +1567,19 @@ async function readBattleStateStoreFromMongo(options = {}) {
     if (!canUseMongoStateStore()) {
         return { version: 1, updatedAt: null, states: {} };
     }
-    const playerId = normalizeText(options?.playerId);
-    const filter = playerId ? { playerId } : {};
-    const docs = await withMongoClient(async ({ db }) => {
-        return db.collection(MONGO_COLLECTION.battleState)
-            .find(filter)
-            .toArray();
-    }, {
-        uri: mongoConfig.uri,
-        dbName: mongoConfig.dbName
-    });
-
-    const states = {};
-    let latestUpdatedAtMs = 0;
-    (Array.isArray(docs) ? docs : []).forEach((doc) => {
-        const rowPlayerId = normalizeText(doc?.playerId);
-        const rowCharacterName = normalizeText(doc?.characterName);
-        if (!rowPlayerId || !rowCharacterName) return;
-        if (!states[rowPlayerId] || typeof states[rowPlayerId] !== 'object') {
-            states[rowPlayerId] = {};
-        }
-        states[rowPlayerId][rowCharacterName] = normalizeBattleStateCharacterEntry(doc?.state || {});
-        const updatedAtMs = Math.floor(Number(doc?.updatedAtMs || 0));
-        if (updatedAtMs > latestUpdatedAtMs) {
-            latestUpdatedAtMs = updatedAtMs;
-        }
-    });
-
-    return {
-        version: 1,
-        updatedAt: latestUpdatedAtMs > 0 ? new Date(latestUpdatedAtMs).toISOString() : null,
-        states: normalizeBattleStateStoreStates(states)
-    };
+    void options;
+    const fallbackRaw = readJsonFileAsIs(
+        battleStateJsonPath,
+        { version: 1, updatedAt: null, states: {} }
+    );
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleState);
+    if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleState, fallbackRaw, {
+            updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
+        });
+        return normalizeBattleStateStorePayload(fallbackRaw);
+    }
+    return normalizeBattleStateStorePayload(doc.payload);
 }
 
 async function saveBattleStateEntryToMongo(playerId, characterName, state = {}) {
@@ -1328,27 +1590,19 @@ async function saveBattleStateEntryToMongo(playerId, characterName, state = {}) 
     const updatedAtMs = Date.now();
     const updatedAt = new Date(updatedAtMs).toISOString();
     const normalizedState = normalizeBattleStateCharacterEntry(state);
-
-    await withMongoClient(async ({ db }) => {
-        await db.collection(MONGO_COLLECTION.battleState).updateOne(
-            {
-                playerId: normalizedPlayerId,
-                characterName: normalizedCharacterName
-            },
-            {
-                $set: {
-                    playerId: normalizedPlayerId,
-                    characterName: normalizedCharacterName,
-                    state: normalizedState,
-                    updatedAt,
-                    updatedAtMs
-                }
-            },
-            { upsert: true }
-        );
+    const store = await readBattleStateStoreFromMongo();
+    const normalizedStore = normalizeBattleStateStorePayload(store);
+    if (!normalizedStore.states[normalizedPlayerId] || typeof normalizedStore.states[normalizedPlayerId] !== 'object') {
+        normalizedStore.states[normalizedPlayerId] = {};
+    }
+    normalizedStore.states[normalizedPlayerId][normalizedCharacterName] = normalizedState;
+    normalizedStore.updatedAt = updatedAt;
+    await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleState, {
+        version: 1,
+        updatedAt,
+        states: normalizedStore.states
     }, {
-        uri: mongoConfig.uri,
-        dbName: mongoConfig.dbName
+        updatedAt
     });
 
     return { updatedAt, updatedAtMs, state: normalizedState };
@@ -1356,16 +1610,12 @@ async function saveBattleStateEntryToMongo(playerId, characterName, state = {}) 
 
 async function getBattleStateUpdatedAtMsFromMongo() {
     if (!canUseMongoStateStore()) return 0;
-    const doc = await withMongoClient(async ({ db }) => {
-        return db.collection(MONGO_COLLECTION.battleState)
-            .find({}, { projection: { updatedAtMs: 1 } })
-            .sort({ updatedAtMs: -1 })
-            .limit(1)
-            .next();
-    }, {
-        uri: mongoConfig.uri,
-        dbName: mongoConfig.dbName
-    });
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleState);
+    if (!doc || typeof doc !== 'object') return 0;
+    const payloadUpdatedAtMs = Math.floor(Number(doc?.payloadUpdatedAtMs || 0));
+    if (payloadUpdatedAtMs > 0) return payloadUpdatedAtMs;
+    const payloadUpdatedAt = Date.parse(normalizeText(doc?.payload?.updatedAt || ''));
+    if (Number.isFinite(payloadUpdatedAt)) return Math.floor(payloadUpdatedAt);
     return Math.floor(Number(doc?.updatedAtMs || 0));
 }
 
@@ -1466,11 +1716,12 @@ async function getGmDashboardUpdatedAtMsAsync() {
     if (!canUseMongoStateStore()) {
         return getGmDashboardUpdatedAtMs();
     }
-    const [selectMs, battleMs, presenceMs] = await Promise.all([
-        getSelectDataLogUpdatedAtMsFromMongo(),
+    const selectMeta = getFileUpdatedMeta(selectDataLogPath);
+    const [battleMs, presenceMs] = await Promise.all([
         getBattleStateUpdatedAtMsFromMongo(),
         getStoryPresenceUpdatedAtMsFromMongo()
     ]);
+    const selectMs = Number(selectMeta?.mtimeMs || 0);
     return resolveLatestMs([selectMs, battleMs, presenceMs]);
 }
 
@@ -2284,7 +2535,7 @@ router.post('/update-data', (req, res) => {
     res.json({ message: 'Data updated successfully' });
 });
 
-router.post('/memo/load', (req, res) => {
+router.post('/memo/load', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const characterName = normalizeText(req.body?.characterName) || '不明';
@@ -2293,7 +2544,7 @@ router.post('/memo/load', (req, res) => {
         } else {
             upsertConnectedPlayer(playerId, []);
         }
-        const store = readBattleMemoStore();
+        const store = await readBattleMemoStoreForRuntime();
         const playerMemo = convertLegacyMemoDataForPlayer(store?.memos?.[playerId] || {});
         const entry = normalizeMemoEntry(playerMemo?.characters?.[characterName] || {}, 'メモ');
         const activeTab = entry.tabs.find((tab) => tab.id === entry.activeTabId) || entry.tabs[0];
@@ -2312,7 +2563,7 @@ router.post('/memo/load', (req, res) => {
     }
 });
 
-router.post('/memo/save', (req, res) => {
+router.post('/memo/save', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const characterName = normalizeText(req.body?.characterName) || '不明';
@@ -2331,7 +2582,7 @@ router.post('/memo/save', (req, res) => {
         }
 
         const nowIso = new Date().toISOString();
-        const store = readBattleMemoStore();
+        const store = await readBattleMemoStoreForRuntime();
         const playerMemo = convertLegacyMemoDataForPlayer(store?.memos?.[playerId] || {});
         const characterEntry = normalizeMemoEntry(playerMemo?.characters?.[characterName] || {}, 'メモ');
         const activeTab = characterEntry.tabs.find((tab) => tab.id === characterEntry.activeTabId) || characterEntry.tabs[0];
@@ -2339,7 +2590,7 @@ router.post('/memo/save', (req, res) => {
         playerMemo.characters[characterName] = characterEntry;
         store.memos[playerId] = normalizeMemoData(playerMemo);
         store.updatedAt = nowIso;
-        writeBattleMemoStore(store);
+        await writeBattleMemoStoreForRuntime(store);
 
         return res.status(200).json({
             success: true,
@@ -2354,7 +2605,7 @@ router.post('/memo/save', (req, res) => {
     }
 });
 
-router.post('/memo/all/load', (req, res) => {
+router.post('/memo/all/load', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const requestedCharacterNames = Array.isArray(req.body?.characterNames)
@@ -2363,8 +2614,11 @@ router.post('/memo/all/load', (req, res) => {
         upsertConnectedPlayer(playerId, requestedCharacterNames, {
             replaceCharacterNames: requestedCharacterNames.length > 0
         });
-        const store = readBattleMemoStore();
-        const profiles = resolveCharacterProfilesForMemoStore(store);
+        const store = await readBattleMemoStoreForRuntime();
+        const profiles = await resolveCharacterProfilesForMemoStore(store, {
+            playerId,
+            characterNames: requestedCharacterNames
+        });
         const normalized = convertLegacyMemoDataForPlayer(store?.memos?.[playerId] || {});
         const { memoData: normalizedPlayerMemo } = splitProfilesFromMemoData(normalized, profiles);
         const mergedForClient = mergeCharacterProfilesIntoMemoData(
@@ -2375,7 +2629,7 @@ router.post('/memo/all/load', (req, res) => {
 
         // 旧形式から読み込まれた場合も新形式で保持
         store.memos[playerId] = normalizedPlayerMemo;
-        writeBattleMemoStore(store);
+        await writeBattleMemoStoreForRuntime(store);
 
         return res.status(200).json({
             success: true,
@@ -2390,7 +2644,7 @@ router.post('/memo/all/load', (req, res) => {
     }
 });
 
-router.post('/memo/all/save', (req, res) => {
+router.post('/memo/all/save', async (req, res) => {
     try {
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const data = normalizeMemoData(req.body?.data || {}, { characterAllowEmptyTabs: true });
@@ -2401,10 +2655,13 @@ router.post('/memo/all/save', (req, res) => {
             replaceCharacterNames: characterNames.length > 0
         });
         const nowIso = new Date().toISOString();
-        const store = readBattleMemoStore();
-        const existingProfiles = resolveCharacterProfilesForMemoStore(store);
+        const store = await readBattleMemoStoreForRuntime();
+        const existingProfiles = await resolveCharacterProfilesForMemoStore(store, {
+            playerId,
+            characterNames
+        });
         const { memoData: playerMemo, profiles } = splitProfilesFromMemoData(data, existingProfiles, nowIso);
-        writeCharacterProfileStore({
+        await writeCharacterProfileStoreForRuntime({
             version: 1,
             updatedAt: nowIso,
             profiles
@@ -2416,7 +2673,7 @@ router.post('/memo/all/save', (req, res) => {
             characters: playerMemo.characters
         };
         store.updatedAt = nowIso;
-        writeBattleMemoStore(store);
+        await writeBattleMemoStoreForRuntime(store);
         return res.status(200).json({ success: true, updatedAt: store.updatedAt });
     } catch (error) {
         console.error('memo all save error:', error);
@@ -2442,10 +2699,10 @@ router.get('/skill-set/icons', (req, res) => {
     }
 });
 
-router.post('/skill-set/list', (req, res) => {
+router.post('/skill-set/list', async (req, res) => {
     try {
         const characterName = normalizeText(req.body?.characterName) || '不明';
-        const store = readSkillSetPresetStore();
+        const store = await readSkillSetPresetStoreForRuntime();
         const characterPresets = store?.presets?.[characterName] || {};
         const list = Object.entries(characterPresets)
             .map(([name, entry]) => ({
@@ -2470,7 +2727,7 @@ router.post('/skill-set/list', (req, res) => {
     }
 });
 
-router.post('/skill-set/load', (req, res) => {
+router.post('/skill-set/load', async (req, res) => {
     try {
         const characterName = normalizeText(req.body?.characterName) || '不明';
         const presetName = normalizeText(req.body?.presetName);
@@ -2481,7 +2738,7 @@ router.post('/skill-set/load', (req, res) => {
             });
         }
 
-        const store = readSkillSetPresetStore();
+        const store = await readSkillSetPresetStoreForRuntime();
         const entry = store?.presets?.[characterName]?.[presetName];
         if (!entry || typeof entry !== 'object') {
             return res.status(404).json({
@@ -2509,7 +2766,7 @@ router.post('/skill-set/load', (req, res) => {
     }
 });
 
-router.post('/skill-set/save', (req, res) => {
+router.post('/skill-set/save', async (req, res) => {
     try {
         const characterName = normalizeText(req.body?.characterName) || '不明';
         const presetName = normalizeText(req.body?.presetName);
@@ -2527,7 +2784,7 @@ router.post('/skill-set/save', (req, res) => {
         }
 
         const nowIso = new Date().toISOString();
-        const store = readSkillSetPresetStore();
+        const store = await readSkillSetPresetStoreForRuntime();
         if (!store.presets[characterName] || typeof store.presets[characterName] !== 'object') {
             store.presets[characterName] = {};
         }
@@ -2542,7 +2799,7 @@ router.post('/skill-set/save', (req, res) => {
             payload
         };
         store.updatedAt = nowIso;
-        writeSkillSetPresetStore(store);
+        await writeSkillSetPresetStoreForRuntime(store);
 
         return res.status(200).json({
             success: true,
@@ -2562,7 +2819,7 @@ router.post('/skill-set/save', (req, res) => {
     }
 });
 
-router.post('/skill-set/delete', (req, res) => {
+router.post('/skill-set/delete', async (req, res) => {
     try {
         const characterName = normalizeText(req.body?.characterName) || '不明';
         const presetName = normalizeText(req.body?.presetName);
@@ -2573,14 +2830,14 @@ router.post('/skill-set/delete', (req, res) => {
             });
         }
 
-        const store = readSkillSetPresetStore();
+        const store = await readSkillSetPresetStoreForRuntime();
         if (
             store?.presets?.[characterName]
             && Object.prototype.hasOwnProperty.call(store.presets[characterName], presetName)
         ) {
             delete store.presets[characterName][presetName];
             store.updatedAt = new Date().toISOString();
-            writeSkillSetPresetStore(store);
+            await writeSkillSetPresetStoreForRuntime(store);
         }
 
         return res.status(200).json({ success: true });
@@ -2593,7 +2850,7 @@ router.post('/skill-set/delete', (req, res) => {
     }
 });
 
-router.post('/skill-set/rename', (req, res) => {
+router.post('/skill-set/rename', async (req, res) => {
     try {
         const characterName = normalizeText(req.body?.characterName) || '不明';
         const presetName = normalizeText(req.body?.presetName);
@@ -2615,7 +2872,7 @@ router.post('/skill-set/rename', (req, res) => {
             });
         }
 
-        const store = readSkillSetPresetStore();
+        const store = await readSkillSetPresetStoreForRuntime();
         if (!store.presets[characterName] || typeof store.presets[characterName] !== 'object') {
             store.presets[characterName] = {};
         }
@@ -2652,7 +2909,7 @@ router.post('/skill-set/rename', (req, res) => {
             delete characterStore[presetName];
         }
         store.updatedAt = nowIso;
-        writeSkillSetPresetStore(store);
+        await writeSkillSetPresetStoreForRuntime(store);
 
         return res.status(200).json({
             success: true,
@@ -2844,9 +3101,7 @@ router.get('/gm/dashboard', async (req, res) => {
         if (canUseMongoStateStore()) {
             await refreshPresenceMapFromMongo(storyConnectedPlayerMap, 'story');
         }
-        const selectDataLog = canUseMongoStateStore()
-            ? await readSelectDataLogSnapshotFromMongo()
-            : readSelectDataLogSnapshot();
+        const selectDataLog = readSelectDataLogSnapshot();
         const battleStateStore = canUseMongoStateStore()
             ? await readBattleStateStoreFromMongo()
             : readBattleStateStore();
@@ -2896,9 +3151,6 @@ router.post('/select_dataLog', async (req, res) => {
             rollResults
         };
 
-        if (canUseMongoStateStore()) {
-            await appendSelectDataLogToMongo(logEntry);
-        }
         fs.mkdirSync(path.dirname(selectDataLogPath), { recursive: true });
         fs.appendFileSync(selectDataLogPath, `${JSON.stringify(logEntry)}\n`, 'utf8');
 
