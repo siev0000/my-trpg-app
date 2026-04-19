@@ -3345,10 +3345,13 @@ router.post('/presence/heartbeat', async (req, res) => {
             selectedCharacterName
         });
         if (canUseMongoStateStore() && entry) {
-            try {
-                await upsertPresenceMongo(useStoryScope ? 'story' : 'default', entry);
-            } catch (mongoError) {
-                console.warn('presence heartbeat mongo upsert failed:', mongoError?.message || mongoError);
+            const mongoStatus = await getMongoConnectionStatus().catch(() => null);
+            if (mongoStatus?.connected) {
+                try {
+                    await upsertPresenceMongo(useStoryScope ? 'story' : 'default', entry);
+                } catch (mongoError) {
+                    console.warn('presence heartbeat mongo upsert failed:', mongoError?.message || mongoError);
+                }
             }
         }
         return res.status(200).json({
@@ -3383,8 +3386,11 @@ router.post('/presence/disconnect', async (req, res) => {
             removed = removedDefault || removedStory;
         }
         if (canUseMongoStateStore()) {
-            const mongoRemoved = await removePresenceMongo(playerId, scope);
-            removed = removed || mongoRemoved;
+            const mongoStatus = await getMongoConnectionStatus().catch(() => null);
+            if (mongoStatus?.connected) {
+                const mongoRemoved = await removePresenceMongo(playerId, scope);
+                removed = removed || mongoRemoved;
+            }
         }
         return res.status(200).json({
             success: true,

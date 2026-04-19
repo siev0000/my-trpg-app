@@ -1788,11 +1788,17 @@ async function statusAll(acquiredClasses, initialClasses) {
     DebaglogSet("returnStats :", returnStats);
 
     // acquiredData の各要素をループ
-    acquiredClasses.forEach(acquiredItem => {
+    (Array.isArray(acquiredClasses) ? acquiredClasses : []).forEach(acquiredItem => {
+        if (!acquiredItem || typeof acquiredItem !== "object") return;
+        const classStats = (acquiredItem.stats && typeof acquiredItem.stats === "object")
+            ? acquiredItem.stats
+            : {};
         // Lv + Ef を計算
-        const levelWithEf = parseInt(acquiredItem.Lv) + parseInt(acquiredItem.Ef);
-        returnStats.allLv += parseInt(acquiredItem.Lv)*10
-        returnStats.allEf += parseInt(acquiredItem.Ef)
+        const classLv = parseInt(acquiredItem.Lv, 10) || 0;
+        const classEf = parseInt(acquiredItem.Ef, 10) || 0;
+        const levelWithEf = classLv + classEf;
+        returnStats.allLv += classLv * 10;
+        returnStats.allEf += classEf;
         // DebaglogSet("levelWithEf :", levelWithEf);
 
         // 一致したクラスがある場合のみ合計を計算
@@ -1801,11 +1807,11 @@ async function statusAll(acquiredClasses, initialClasses) {
 
             // 各ステータスをレベルに基づいて調整
             statuSum.forEach(stat => {
-                const adjustedValue = (parseInt(acquiredItem.stats[stat], 10) / 10) * acquiredItem.Lv || 0;
+                const adjustedValue = (parseInt(classStats[stat], 10) / 10) * classLv || 0;
             
                 if (stat === "SIZ") {
                     // SIZ の場合は最大値を格納
-                    returnStats.levelStats[stat] = Math.max(parseInt(returnStats.levelStats[stat]) || 0, acquiredItem.stats[stat]);
+                    returnStats.levelStats[stat] = Math.max(parseInt(returnStats.levelStats[stat], 10) || 0, parseInt(classStats[stat], 10) || 0);
                 } else if (stat === "APP") {
                     // APP の場合はLvをそのまま掛け算
                     returnStats.levelStats[stat] += adjustedValue*10;
@@ -1819,8 +1825,8 @@ async function statusAll(acquiredClasses, initialClasses) {
 
             // タレントも同様に計算
             talents.forEach(talent => {
-                if (acquiredItem.stats[talent] !== undefined) {
-                    const adjustedTalentValue = (parseInt(acquiredItem.stats[talent]) / 10) * acquiredItem.Lv || 0;
+                if (classStats[talent] !== undefined) {
+                    const adjustedTalentValue = (parseInt(classStats[talent], 10) / 10) * classLv || 0;
                     returnStats.skillValues[talent] += adjustedTalentValue; // 合計を更新
                     // DebaglogSet(`Talent [${talent}] adjusted by:`, adjustedTalentValue, "New total:", returnStats.skillValues[talent]);
                 }
@@ -1828,8 +1834,8 @@ async function statusAll(acquiredClasses, initialClasses) {
 
             // 肉体も同様に計算
             bodyAttributes.forEach(attribute => {
-                if (acquiredItem.stats[attribute] !== undefined) {
-                    const adjustedValue = parseInt(acquiredItem.stats[attribute]) || 0;
+                if (classStats[attribute] !== undefined) {
+                    const adjustedValue = parseInt(classStats[attribute], 10) || 0;
                     returnStats.bodyAttributes[attribute] = Math.max(returnStats.bodyAttributes[attribute], adjustedValue);
                     // DebaglogSet(`Body attribute [${attribute}] set to:`, adjustedValue ,"  取得データ set to:", returnStats.bodyAttributes[attribute]);
                 }
@@ -1837,35 +1843,35 @@ async function statusAll(acquiredClasses, initialClasses) {
 
             // 耐性も同様に計算
             resistances.forEach(resistance => {
-                if (acquiredItem.stats[resistance] !== undefined) {
-                    const adjustedValue = parseInt(acquiredItem.stats[resistance]) || 0;
+                if (classStats[resistance] !== undefined) {
+                    const adjustedValue = parseInt(classStats[resistance], 10) || 0;
                     returnStats.resistances[resistance] += adjustedValue;
                     // DebaglogSet(`Resistance [${resistance}] adjusted by:`, adjustedValue, "New total:", returnStats.resistances[resistance]);
                 }
             });
 
             // 肉体種別
-            if (acquiredItem.stats['肉体'] !== undefined) {
-                const adjustedValue = parseInt(acquiredItem.stats['肉体']) || 0;
+            if (classStats['肉体'] !== undefined) {
+                const adjustedValue = parseInt(classStats['肉体'], 10) || 0;
                 returnStats.bodyType = Math.max(returnStats.bodyType, adjustedValue);
                 // DebaglogSet(`Body attribute [${attribute}] set to:`, adjustedValue ,"  取得データ set to:", returnStats.bodyAttributes[attribute]);
             }
 
             // 弱点
-            if (acquiredItem.stats['弱点'] !== 0) {
-                returnStats.weaknesses.push(acquiredItem.stats['弱点'] ); // 取得したスキルを格納
+            if (classStats['弱点'] !== 0) {
+                returnStats.weaknesses.push(classStats['弱点'] ); // 取得したスキルを格納
                 // DebaglogSet(`Skill acquired [${skillKey}]:`, acquiredItem.stats[skillKey]);
             }
-            if (acquiredItem.stats['弱点2'] !== 0) {
-                returnStats.weaknesses.push(acquiredItem.stats['弱点2'] ); // 取得したスキルを格納
+            if (classStats['弱点2'] !== 0) {
+                returnStats.weaknesses.push(classStats['弱点2'] ); // 取得したスキルを格納
                 // DebaglogSet(`Skill acquired [${skillKey}]:`, acquiredItem.stats[skillKey]);
             }
 
             // スキルの取得
             for (let i = 1; i <= levelWithEf; i++) {
                 const skillKey = `Lv${i}`;
-                if (acquiredItem.stats[skillKey] !== 0) {
-                    returnStats.skillNames.push(acquiredItem.stats[skillKey]); // 取得したスキルを格納
+                if (classStats[skillKey] !== 0) {
+                    returnStats.skillNames.push(classStats[skillKey]); // 取得したスキルを格納
                     // DebaglogSet(`Skill acquired [${skillKey}]:`, acquiredItem.stats[skillKey]);
                 }
             }
@@ -1881,20 +1887,29 @@ async function statusAll(acquiredClasses, initialClasses) {
     DebaglogSet("acquiredClasses:", acquiredClasses);
     DebaglogSet("initialClasses:", initialClasses);
 
-    const initialClassStats = acquiredClasses.find(stats => stats.className === initialClasses);
-    DebaglogSet("initialClassStats:", initialClassStats);
+    const initialClassEntry = (Array.isArray(acquiredClasses) ? acquiredClasses : []).find(
+        (entry) => normalizeBattleText(entry?.className) === normalizeBattleText(initialClasses)
+    ) || (Array.isArray(acquiredClasses) ? acquiredClasses : []).find(
+        (entry) => entry && typeof entry?.stats === "object"
+    ) || null;
+    const initialClassStats = (initialClassEntry?.stats && typeof initialClassEntry.stats === "object")
+        ? initialClassEntry.stats
+        : {};
+    DebaglogSet("initialClassStats:", initialClassEntry);
 
+    const safeLevel = Math.max(1, parseInt(statusCharacter?.Lv, 10) || 1);
+    const getInitialBase = (key) => parseInt(initialClassStats?.[key], 10) || 0;
 
-    returnStats.baseStats.HP = (parseInt(returnStats.levelStats.HP) / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.HP) * 0.5
-    returnStats.baseStats.MP = (returnStats.levelStats.MP / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.MP) * 0.5
-    returnStats.baseStats.ST = (returnStats.levelStats.ST / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.ST) * 0.5
-    returnStats.baseStats.攻撃 = (returnStats.levelStats.攻撃 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.攻撃) * 0.5
-    returnStats.baseStats.防御 = (returnStats.levelStats.防御 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.防御) * 0.5
-    returnStats.baseStats.魔力 = (returnStats.levelStats.魔力 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.魔力) * 0.5
-    returnStats.baseStats.魔防 = (returnStats.levelStats.魔防 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.魔防) * 0.5
-    returnStats.baseStats.速度 = (returnStats.levelStats.速度 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.速度) * 0.5
-    returnStats.baseStats.命中 = (returnStats.levelStats.命中 / statusCharacter.Lv) * 2 + parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.命中) * 0.5
-    returnStats.baseStats.APP = parseInt(acquiredClasses.find(stats => stats.className === initialClasses).stats.APP) * 10
+    returnStats.baseStats.HP = (parseInt(returnStats.levelStats.HP, 10) / safeLevel) * 2 + getInitialBase("HP") * 0.5
+    returnStats.baseStats.MP = (parseInt(returnStats.levelStats.MP, 10) / safeLevel) * 2 + getInitialBase("MP") * 0.5
+    returnStats.baseStats.ST = (parseInt(returnStats.levelStats.ST, 10) / safeLevel) * 2 + getInitialBase("ST") * 0.5
+    returnStats.baseStats.攻撃 = (parseInt(returnStats.levelStats.攻撃, 10) / safeLevel) * 2 + getInitialBase("攻撃") * 0.5
+    returnStats.baseStats.防御 = (parseInt(returnStats.levelStats.防御, 10) / safeLevel) * 2 + getInitialBase("防御") * 0.5
+    returnStats.baseStats.魔力 = (parseInt(returnStats.levelStats.魔力, 10) / safeLevel) * 2 + getInitialBase("魔力") * 0.5
+    returnStats.baseStats.魔防 = (parseInt(returnStats.levelStats.魔防, 10) / safeLevel) * 2 + getInitialBase("魔防") * 0.5
+    returnStats.baseStats.速度 = (parseInt(returnStats.levelStats.速度, 10) / safeLevel) * 2 + getInitialBase("速度") * 0.5
+    returnStats.baseStats.命中 = (parseInt(returnStats.levelStats.命中, 10) / safeLevel) * 2 + getInitialBase("命中") * 0.5
+    returnStats.baseStats.APP = getInitialBase("APP") * 10
     
     // totalStats.SIZ が 0 の時に 170 にする
     if (returnStats.baseStats.SIZ === 0) {
