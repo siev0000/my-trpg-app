@@ -19,7 +19,7 @@
 ## Deploy Steps
 1. Push this repository to GitHub.
 2. In Render, create a new Blueprint service from this repo (it reads `render.yaml`).
-3. Set secret env var `MONGODB_URI` in Render dashboard.
+3. Set secret env vars `MONGODB_URI` and `MONGODB_DB` in Render dashboard.
 4. Deploy.
 
 ## Notes

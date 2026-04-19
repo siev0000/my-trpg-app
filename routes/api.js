@@ -64,6 +64,7 @@ console.log(`[storage] appDataRoot=${appDataRoot}`);
 console.log(`[storage] logsDir=${logsDirPath}`);
 console.log(`[storage] useMongoDB=${mongoConfig.enabled ? 'true' : 'false'}`);
 console.log(`[storage] mongoPrimaryData=${useMongoPrimaryData ? 'true' : 'false'}`);
+console.log(`[storage] mongoDbName=${mongoConfig.dbName}`);
 
 const FIELD_KEYS = {
     name: ['名前'],

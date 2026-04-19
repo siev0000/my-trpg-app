@@ -59,6 +59,24 @@ function getConfigValue(key) {
     return String(fileValue);
 }
 
+function inferMongoDbNameFromUri(uri = "") {
+    const raw = String(uri || "").trim();
+    if (!raw) return "";
+
+    try {
+        const parsed = new URL(raw);
+        const pathname = String(parsed.pathname || "").replace(/^\/+/, "").trim();
+        if (!pathname) return "";
+        const firstSegment = pathname.split("/")[0];
+        return decodeURIComponent(String(firstSegment || "").trim());
+    } catch (error) {
+        const match = raw.match(/^[^/]+\/\/[^/]+\/([^?]+)/);
+        if (!match || !match[1]) return "";
+        const firstSegment = String(match[1]).split("/")[0];
+        return decodeURIComponent(String(firstSegment || "").trim());
+    }
+}
+
 function getAppDataRoot() {
     return path.resolve(
         process.env.APP_DATA_DIR
@@ -73,7 +91,9 @@ function getLogsDirPath() {
 
 function getMongoConfig() {
     const uri = String(getConfigValue("MONGODB_URI") || getConfigValue("MONGO_URI") || "").trim();
-    const dbName = String(getConfigValue("MONGODB_DB") || "my_trpg_app").trim() || "my_trpg_app";
+    const envDbName = String(getConfigValue("MONGODB_DB") || "").trim();
+    const inferredDbName = inferMongoDbNameFromUri(uri);
+    const dbName = envDbName || inferredDbName || "my_trpg_app";
     const enabled = normalizeBool(getConfigValue("USE_MONGODB"), Boolean(uri));
     return {
         enabled,
@@ -86,5 +106,6 @@ module.exports = {
     getAppDataRoot,
     getLogsDirPath,
     getMongoConfig,
-    normalizeBool
+    normalizeBool,
+    inferMongoDbNameFromUri
 };
