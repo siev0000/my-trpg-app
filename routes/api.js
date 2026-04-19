@@ -67,7 +67,12 @@ const isRenderRuntime = Boolean(
     || normalizeText(process.env.RENDER_SERVICE_ID)
     || normalizeText(process.env.RENDER_EXTERNAL_URL)
 );
-const useMongoItemsInRender = Boolean(useMongoPrimaryData && isRenderRuntime);
+const useMongoItemsMode = normalizeText(process.env.USE_MONGO_ITEMS).toLowerCase();
+const useMongoItemsInRender = (() => {
+    if (useMongoItemsMode === 'true') return Boolean(useMongoPrimaryData);
+    if (useMongoItemsMode === 'auto') return Boolean(useMongoPrimaryData && isRenderRuntime);
+    return false;
+})();
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
@@ -76,6 +81,7 @@ console.log(`[storage] useMongoDB=${mongoConfig.enabled ? 'true' : 'false'}`);
 console.log(`[storage] mongoPrimaryData=${useMongoPrimaryData ? 'true' : 'false'}`);
 console.log(`[storage] mongoDbName=${mongoConfig.dbName}`);
 console.log(`[storage] renderRuntime=${isRenderRuntime ? 'true' : 'false'}`);
+console.log(`[storage] mongoItemsMode=${useMongoItemsMode || 'json'}`);
 console.log(`[storage] mongoItemsOnRender=${useMongoItemsInRender ? 'true' : 'false'}`);
 
 const FIELD_KEYS = {
