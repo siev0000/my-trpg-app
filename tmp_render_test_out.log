@@ -1,0 +1,9 @@
+[storage] appDataRoot=C:\Users\skkt3\ドキュメント\Github\my-trpg-app
+[storage] logsDir=C:\Users\skkt3\ドキュメント\Github\my-trpg-app\logs
+[storage] useMongoDB=true
+[storage] mongoPrimaryData=true
+Server is running on http://localhost:3199
+[game-data] items loaded count=4167
+[game-data] skills loaded count=6881
+[game-data] classes loaded count=1462
+[game-data] items loaded count=4167

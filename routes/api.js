@@ -2241,23 +2241,22 @@ function loadGameDataBody(forceReload = false) {
     return true;
 }
 
-function loadGameDataMaster(forceReload = false) {
-    const loadedItems = loadGameDataItems(forceReload);
-    const loadedSkills = loadGameDataSkills(forceReload);
-    const loadedClasses = loadGameDataClasses(forceReload);
-    const loadedBody = loadGameDataBody(forceReload);
-    return loadedItems || loadedSkills || loadedClasses || loadedBody;
-}
-
-function ensureGameDataMasterLoaded() {
-    if (!gameDataItemsLoaded || !gameDataSkillsLoaded || !gameDataClassesLoaded || !gameDataBodyLoaded) {
-        loadGameDataMaster(true);
-        return;
-    }
-    loadGameDataMaster(false);
-}
-
 function ensureGameDataItemsLoaded() {
+    if (gameDataSkillsLoaded) {
+        cachedSkills = [];
+        gameDataSkillsLoaded = false;
+        gameDataSkillsMtimeMs = 0;
+    }
+    if (gameDataClassesLoaded) {
+        cachedClasses = [];
+        gameDataClassesLoaded = false;
+        gameDataClassesMtimeMs = 0;
+    }
+    if (gameDataBodyLoaded) {
+        cachedBody = [];
+        gameDataBodyLoaded = false;
+        gameDataBodyMtimeMs = 0;
+    }
     if (!gameDataItemsLoaded) {
         loadGameDataItems(true);
         return;
@@ -2265,7 +2264,68 @@ function ensureGameDataItemsLoaded() {
     loadGameDataItems(false);
 }
 
+function ensureGameDataSkillsLoaded() {
+    if (gameDataItemsLoaded) {
+        cachedItems = [];
+        gameDataItemsLoaded = false;
+        gameDataItemsMtimeMs = 0;
+    }
+    if (gameDataClassesLoaded) {
+        cachedClasses = [];
+        gameDataClassesLoaded = false;
+        gameDataClassesMtimeMs = 0;
+    }
+    if (gameDataBodyLoaded) {
+        cachedBody = [];
+        gameDataBodyLoaded = false;
+        gameDataBodyMtimeMs = 0;
+    }
+    if (!gameDataSkillsLoaded) {
+        loadGameDataSkills(true);
+        return;
+    }
+    loadGameDataSkills(false);
+}
+
+function ensureGameDataClassesLoaded() {
+    if (gameDataItemsLoaded) {
+        cachedItems = [];
+        gameDataItemsLoaded = false;
+        gameDataItemsMtimeMs = 0;
+    }
+    if (gameDataSkillsLoaded) {
+        cachedSkills = [];
+        gameDataSkillsLoaded = false;
+        gameDataSkillsMtimeMs = 0;
+    }
+    if (gameDataBodyLoaded) {
+        cachedBody = [];
+        gameDataBodyLoaded = false;
+        gameDataBodyMtimeMs = 0;
+    }
+    if (!gameDataClassesLoaded) {
+        loadGameDataClasses(true);
+        return;
+    }
+    loadGameDataClasses(false);
+}
+
 function ensureGameDataBodyLoaded() {
+    if (gameDataItemsLoaded) {
+        cachedItems = [];
+        gameDataItemsLoaded = false;
+        gameDataItemsMtimeMs = 0;
+    }
+    if (gameDataSkillsLoaded) {
+        cachedSkills = [];
+        gameDataSkillsLoaded = false;
+        gameDataSkillsMtimeMs = 0;
+    }
+    if (gameDataClassesLoaded) {
+        cachedClasses = [];
+        gameDataClassesLoaded = false;
+        gameDataClassesMtimeMs = 0;
+    }
     if (!gameDataBodyLoaded) {
         loadGameDataBody(true);
         return;
@@ -2423,9 +2483,15 @@ async function ensureMongoPrimaryCache(options = {}) {
     });
 }
 
-loadGameDataMaster(true);
+function refreshLoadedGameDataCaches() {
+    if (gameDataItemsLoaded) loadGameDataItems(false);
+    if (gameDataSkillsLoaded) loadGameDataSkills(false);
+    if (gameDataClassesLoaded) loadGameDataClasses(false);
+    if (gameDataBodyLoaded) loadGameDataBody(false);
+}
+
 setInterval(() => {
-    loadGameDataMaster(false);
+    refreshLoadedGameDataCaches();
 }, GAME_DATA_POLL_MS);
 if (useMongoPrimaryData) {
     setInterval(() => {
@@ -2514,7 +2580,7 @@ router.post('/login', async (req, res) => {
 
 router.post('/skills', async (req, res) => {
     try {
-        ensureGameDataMasterLoaded();
+        ensureGameDataSkillsLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
@@ -2541,7 +2607,7 @@ router.post('/skills', async (req, res) => {
 
 router.post('/getSkillByName', async (req, res) => {
     try {
-        ensureGameDataMasterLoaded();
+        ensureGameDataSkillsLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
@@ -2569,7 +2635,7 @@ router.post('/getSkillByName', async (req, res) => {
 
 router.post('/magics', async (req, res) => {
     try {
-        ensureGameDataMasterLoaded();
+        ensureGameDataSkillsLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
@@ -2595,7 +2661,7 @@ router.post('/magics', async (req, res) => {
 });
 
 router.post('/classes', (req, res) => {
-    ensureGameDataMasterLoaded();
+    ensureGameDataClassesLoaded();
     const { classList } = req.body;
     const classesToMatch = Array.isArray(classList) ? classList : [classList];
     const nameSet = new Set(classesToMatch.map((name) => normalizeText(name)).filter(Boolean));
@@ -3061,6 +3127,7 @@ router.post('/skill-set/rename', async (req, res) => {
 
 router.post('/battle-state/load', async (req, res) => {
     try {
+        ensureGameDataSkillsLoaded();
         const playerId = normalizeText(req.body?.playerId) || 'guest';
         const requestedCharacterNames = (Array.isArray(req.body?.characterNames) ? req.body.characterNames : [])
             .map((name) => normalizeText(name))
@@ -3228,7 +3295,7 @@ router.get('/gm/dashboard', async (req, res) => {
         }
 
         await ensureMongoPrimaryCache({ characters: true });
-        ensureGameDataMasterLoaded();
+        ensureGameDataSkillsLoaded();
         if (canUseMongoStateStore()) {
             await refreshPresenceMapFromMongo(storyConnectedPlayerMap, 'story');
         }
