@@ -3,6 +3,7 @@ const POLL_INTERVAL_MS = 2500;
 const INFINITE_TURNS = 9999999;
 
 const gmLogoutButtonElement = document.getElementById("gm-logout-button");
+const gmStorageStatusElement = document.getElementById("gm-storage-status");
 const gmPresenceMetaElement = document.getElementById("gm-presence-meta");
 const gmPresenceListElement = document.getElementById("gm-presence-list");
 const gmLogMetaElement = document.getElementById("gm-log-meta");
@@ -92,6 +93,27 @@ function formatSkillMetric(value) {
     const numeric = Math.round(toFiniteNumber(value, 0));
     if (numeric === 0) return "-";
     return String(numeric);
+}
+
+function renderMongoStatus(status = {}) {
+    if (!gmStorageStatusElement) return;
+    const enabled = Boolean(status?.enabled);
+    const connected = Boolean(status?.connected);
+    const dbName = normalizeText(status?.dbName) || "-";
+
+    gmStorageStatusElement.classList.remove("is-connected", "is-disconnected", "is-disabled");
+    if (!enabled) {
+        gmStorageStatusElement.textContent = "Mongo接続: 無効";
+        gmStorageStatusElement.classList.add("is-disabled");
+        return;
+    }
+    if (connected) {
+        gmStorageStatusElement.textContent = `Mongo接続: OK (${dbName})`;
+        gmStorageStatusElement.classList.add("is-connected");
+        return;
+    }
+    gmStorageStatusElement.textContent = `Mongo接続: NG (${dbName})`;
+    gmStorageStatusElement.classList.add("is-disconnected");
 }
 
 function escapeHtml(value) {
@@ -894,6 +916,7 @@ async function fetchDashboard() {
             }
             throw new Error(data?.message || `gm dashboard error: ${response.status}`);
         }
+        renderMongoStatus(data?.mongoStatus || {});
         if (normalizeText(data?.updatedAt)) {
             lastDashboardUpdatedAt = normalizeText(data.updatedAt);
         }
@@ -926,6 +949,7 @@ async function fetchDashboard() {
         }
     } catch (error) {
         console.warn("[gm] dashboard fetch failed:", error);
+        renderMongoStatus({ enabled: true, connected: false });
         if (gmPresenceMetaElement) {
             gmPresenceMetaElement.textContent = "更新失敗。再試行します。";
         }

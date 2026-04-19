@@ -58,6 +58,7 @@ const SELECT_LOG_FLUSH_INTERVAL_MS = 5 * 60 * 1000;
 const SELECT_LOG_IDLE_FLUSH_MS = 5 * 60 * 1000;
 const SELECT_LOG_EXPORT_THRESHOLD_BYTES = 5 * 1024 * 1024;
 const GAME_DATA_POLL_MS = 60 * 1000;
+const MONGO_STATUS_CACHE_TTL_MS = 10 * 1000;
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
@@ -924,7 +925,7 @@ function findCharacterByName(characterName) {
 function buildLoginCharactersForUser(user) {
     const characterSlots = Object.keys(user || {})
         .map((key) => {
-            const match = String(key).match(/^character(\d+)$/i);
+            const match = String(key).match(/^(?:character[_-]?|キャラクター)(\d+)$/i);
             if (!match) return null;
             return {
                 key,
@@ -943,6 +944,16 @@ function buildLoginCharactersForUser(user) {
         const summary = buildCharacterSummary(characterData);
         if (!summary) continue;
         characters.push(summary);
+    }
+
+    if (characters.length === 0 && Array.isArray(user?.characters)) {
+        user.characters.forEach((characterName) => {
+            const characterData = findCharacterByName(characterName);
+            if (!characterData) return;
+            const summary = buildCharacterSummary(characterData);
+            if (!summary) return;
+            characters.push(summary);
+        });
     }
     return characters;
 }
@@ -1230,6 +1241,57 @@ function canUseMongoStateStore() {
         useMongoPrimaryData
         && String(mongoConfig?.uri || '').trim()
     );
+}
+
+async function getMongoConnectionStatus(options = {}) {
+    const enabled = canUseMongoStateStore();
+    const dbName = normalizeText(mongoConfig?.dbName);
+    if (!enabled) {
+        const status = {
+            checkedAtMs: Date.now(),
+            enabled: false,
+            connected: false,
+            dbName,
+            message: 'mongodb disabled'
+        };
+        mongoStatusCache = status;
+        return { ...status };
+    }
+
+    const force = Boolean(options?.force);
+    const nowMs = Date.now();
+    if (!force && (nowMs - Number(mongoStatusCache?.checkedAtMs || 0)) < MONGO_STATUS_CACHE_TTL_MS) {
+        return { ...mongoStatusCache };
+    }
+
+    try {
+        await withMongoClient(async ({ db }) => {
+            await db.command({ ping: 1 });
+            return true;
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+        mongoStatusCache = {
+            checkedAtMs: nowMs,
+            enabled: true,
+            connected: true,
+            dbName,
+            message: 'ok'
+        };
+        return { ...mongoStatusCache };
+    } catch (error) {
+        const message = normalizeText(error?.message) || 'connection failed';
+        mongoStatusCache = {
+            checkedAtMs: nowMs,
+            enabled: true,
+            connected: false,
+            dbName,
+            message
+        };
+        console.warn(`[mongo] status check failed: ${message}`);
+        return { ...mongoStatusCache };
+    }
 }
 
 function createDefaultBattleMemoStore() {
@@ -2114,6 +2176,13 @@ let gameDataBodyMtimeMs = 0;
 let mongoPrimaryReloadInProgress = false;
 let mongoPrimaryReloadPromise = null;
 let mongoPrimaryLastLoadedAtMs = 0;
+let mongoStatusCache = {
+    checkedAtMs: 0,
+    enabled: false,
+    connected: false,
+    dbName: normalizeText(mongoConfig?.dbName),
+    message: 'not-checked'
+};
 const MONGO_PRIMARY_POLL_MS = 30 * 1000;
 
 function getFileMtimeMsSafe(targetPath = '') {
@@ -2346,8 +2415,25 @@ function normalizeMongoIdValue(value) {
 function normalizeMongoUserRow(row = {}) {
     const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
     const normalized = { ...source };
-    if (!normalizeText(normalized?.ID)) {
-        normalized.ID = normalizeMongoIdValue(source?._id);
+    const normalizedId = normalizeText(
+        normalized?.ID
+        || normalized?.id
+        || normalized?.userID
+        || normalized?.username
+        || normalized?.userName
+        || normalized?.name
+    );
+    const normalizedPassword = normalizeText(
+        normalized?.password
+        || normalized?.pw
+        || normalized?.pass
+        || normalized?.Password
+        || normalized?.PW
+    );
+
+    normalized.ID = normalizedId || normalizeMongoIdValue(source?._id);
+    if (!normalizeText(normalized?.password) && normalizedPassword) {
+        normalized.password = normalizedPassword;
     }
     return normalized;
 }
@@ -2359,6 +2445,87 @@ function normalizeMongoCharacterRow(row = {}) {
         normalized.名前 = normalizeMongoIdValue(source?._id);
     }
     return normalized;
+}
+
+function getNormalizedUserLoginId(user = {}) {
+    return normalizeText(
+        user?.ID
+        || user?.id
+        || user?.userID
+        || user?.username
+        || user?.userName
+        || user?.name
+        || user?._id
+    );
+}
+
+function getNormalizedUserLoginPassword(user = {}) {
+    return normalizeText(
+        user?.password
+        || user?.pw
+        || user?.pass
+        || user?.Password
+        || user?.PW
+    );
+}
+
+function findCachedUserByCredentials(username = '', password = '') {
+    const normalizedUsername = normalizeText(username);
+    const normalizedPassword = normalizeText(password);
+    if (!normalizedUsername || !normalizedPassword) return null;
+    return (Array.isArray(cachedUsers) ? cachedUsers : []).find((user) => (
+        getNormalizedUserLoginId(user) === normalizedUsername
+        && getNormalizedUserLoginPassword(user) === normalizedPassword
+    )) || null;
+}
+
+async function findUserByCredentials(username = '', password = '') {
+    const normalizedUsername = normalizeText(username);
+    const normalizedPassword = normalizeText(password);
+    if (!normalizedUsername || !normalizedPassword) return null;
+
+    const cachedUser = findCachedUserByCredentials(normalizedUsername, normalizedPassword);
+    if (cachedUser) return cachedUser;
+    if (!useMongoPrimaryData) return null;
+
+    try {
+        const docs = await withMongoClient(async ({ db }) => {
+            return db.collection('User')
+                .find({
+                    $or: [
+                        { ID: normalizedUsername },
+                        { id: normalizedUsername },
+                        { userID: normalizedUsername },
+                        { username: normalizedUsername },
+                        { userName: normalizedUsername },
+                        { name: normalizedUsername }
+                    ]
+                })
+                .limit(20)
+                .toArray();
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        const normalizedUsers = (Array.isArray(docs) ? docs : [])
+            .map((row) => normalizeMongoUserRow(row));
+        if (normalizedUsers.length > 0) {
+            const combinedUsers = [
+                ...(Array.isArray(cachedUsers) ? cachedUsers : []),
+                ...normalizedUsers
+            ];
+            cachedUsers = dedupeBy(combinedUsers, (row) => getNormalizedUserLoginId(row));
+        }
+
+        return normalizedUsers.find((user) => (
+            getNormalizedUserLoginId(user) === normalizedUsername
+            && getNormalizedUserLoginPassword(user) === normalizedPassword
+        )) || null;
+    } catch (error) {
+        console.error('[mongo] user login query failed:', error?.message || error);
+        return null;
+    }
 }
 
 async function loadMongoPrimaryData(forceReload = false) {
@@ -2551,13 +2718,21 @@ router.post('/login', async (req, res) => {
         }
 
         await ensureMongoPrimaryCache({ users: true, characters: true });
-
-        const user = cachedUsers.find(
-            (u) => normalizeText(u.ID) === normalizedUsername
-                && normalizeText(u.password) === normalizedPassword
-        );
+        const user = await findUserByCredentials(normalizedUsername, normalizedPassword);
 
         if (!user) {
+            if (useMongoPrimaryData) {
+                const mongoStatus = await getMongoConnectionStatus({ force: true });
+                if (!mongoStatus?.connected) {
+                    return res.status(503).send({
+                        message: 'mongodb is not connected',
+                        mongoStatus
+                    });
+                }
+            }
+            console.warn(
+                `[login] invalid credentials user=${normalizedUsername} cachedUsers=${Array.isArray(cachedUsers) ? cachedUsers.length : 0} db=${mongoConfig.dbName}`
+            );
             return res.status(401).send({ message: 'invalid id or password' });
         }
 
@@ -3283,6 +3458,7 @@ router.get('/gm/dashboard', async (req, res) => {
         }
 
         const sinceMs = Date.parse(normalizeText(req.query?.since));
+        const mongoStatus = await getMongoConnectionStatus();
         const dashboardUpdatedAtMs = await getGmDashboardUpdatedAtMsAsync();
         const dashboardUpdatedAt = dashboardUpdatedAtMs > 0
             ? new Date(dashboardUpdatedAtMs).toISOString()
@@ -3291,7 +3467,8 @@ router.get('/gm/dashboard', async (req, res) => {
             return res.status(200).json({
                 success: true,
                 notModified: true,
-                updatedAt: dashboardUpdatedAt
+                updatedAt: dashboardUpdatedAt,
+                mongoStatus
             });
         }
 
@@ -3315,7 +3492,8 @@ router.get('/gm/dashboard', async (req, res) => {
             notModified: false,
             updatedAt: dashboardUpdatedAt,
             connectedPlayers,
-            selectDataLog
+            selectDataLog,
+            mongoStatus
         });
     } catch (error) {
         console.error('gm dashboard error:', error);

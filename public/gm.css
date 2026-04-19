@@ -95,6 +95,24 @@ body {
     color: #527195;
 }
 
+.gm-storage-status {
+    margin-top: 6px;
+    margin-bottom: 0;
+    font-weight: 700;
+}
+
+.gm-storage-status.is-connected {
+    color: #20764a;
+}
+
+.gm-storage-status.is-disconnected {
+    color: #a2443a;
+}
+
+.gm-storage-status.is-disabled {
+    color: #667788;
+}
+
 .gm-scroll {
     flex: 1;
     min-height: 0;
