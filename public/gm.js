@@ -100,10 +100,13 @@ function renderMongoStatus(status = {}) {
     const enabled = Boolean(status?.enabled);
     const connected = Boolean(status?.connected);
     const dbName = normalizeText(status?.dbName) || "-";
+    const message = normalizeText(status?.message);
 
     gmStorageStatusElement.classList.remove("is-connected", "is-disconnected", "is-disabled");
     if (!enabled) {
-        gmStorageStatusElement.textContent = "Mongo接続: 無効";
+        gmStorageStatusElement.textContent = message
+            ? `Mongo接続: 無効 (${message})`
+            : "Mongo接続: 無効";
         gmStorageStatusElement.classList.add("is-disabled");
         return;
     }

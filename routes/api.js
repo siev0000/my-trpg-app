@@ -1244,15 +1244,23 @@ function canUseMongoStateStore() {
 }
 
 async function getMongoConnectionStatus(options = {}) {
+    const hasUri = Boolean(String(mongoConfig?.uri || '').trim());
+    const enabledByFlag = Boolean(mongoConfig?.enabled);
     const enabled = canUseMongoStateStore();
     const dbName = normalizeText(mongoConfig?.dbName);
     if (!enabled) {
+        let disabledReason = 'mongodb disabled';
+        if (!hasUri) {
+            disabledReason = 'MONGODB_URI is not set';
+        } else if (!enabledByFlag) {
+            disabledReason = 'USE_MONGODB is false';
+        }
         const status = {
             checkedAtMs: Date.now(),
             enabled: false,
             connected: false,
             dbName,
-            message: 'mongodb disabled'
+            message: disabledReason
         };
         mongoStatusCache = status;
         return { ...status };
