@@ -2121,11 +2121,13 @@ function passiveSkillBonuses(passiveSkills) {
     // JSON.parse(JSON.stringify(characterData));
     const totalBonuses = JSON.parse(JSON.stringify(characterData.skillBonuses));
 
-    passiveSkills.forEach(skill => {
+    (Array.isArray(passiveSkills) ? passiveSkills : []).forEach(skill => {
+        if (!skill || typeof skill !== "object") return;
         skillAttributes.forEach(attr => {
             if (skill.hasOwnProperty(attr)) {
-                // totalBonuses の該当する属性がない場合、0に初期化
-                totalBonuses[attr] = (totalBonuses[attr] || 0) + skill[attr];
+                const currentValue = toFiniteNumber(totalBonuses[attr]);
+                const addValue = toFiniteNumber(skill[attr]);
+                totalBonuses[attr] = currentValue + addValue;
             }
         });
     });
