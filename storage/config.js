@@ -90,10 +90,9 @@ function getLogsDirPath() {
 }
 
 function getMongoConfig() {
+    const fixedDbName = "TRPG";
     const uri = String(getConfigValue("MONGODB_URI") || getConfigValue("MONGO_URI") || "").trim();
-    const envDbName = String(getConfigValue("MONGODB_DB") || "").trim();
-    const inferredDbName = inferMongoDbNameFromUri(uri);
-    const dbName = envDbName || inferredDbName || "my_trpg_app";
+    const dbName = fixedDbName;
     const enabled = normalizeBool(getConfigValue("USE_MONGODB"), Boolean(uri));
     return {
         enabled,
