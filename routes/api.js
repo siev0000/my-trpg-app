@@ -1421,18 +1421,21 @@ async function readBattleMemoStoreForRuntime() {
     if (!canUseMongoStateStore()) {
         return readBattleMemoStore();
     }
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleMemo);
+    if (doc && Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        return normalizeBattleMemoStorePayload(doc.payload);
+    }
     const fallbackRaw = readJsonFileAsIs(
         battleMemoJsonPath,
         { version: 1, updatedAt: null, memos: {}, characterProfiles: {} }
     );
-    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleMemo);
     if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
         await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleMemo, fallbackRaw, {
             updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
         });
         return normalizeBattleMemoStorePayload(fallbackRaw);
     }
-    return normalizeBattleMemoStorePayload(doc.payload);
+    return normalizeBattleMemoStorePayload(fallbackRaw);
 }
 
 async function writeBattleMemoStoreForRuntime(store = {}) {
@@ -1454,18 +1457,21 @@ async function readCharacterProfileStoreForRuntime() {
     if (!canUseMongoStateStore()) {
         return readCharacterProfileStore();
     }
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.characterProfiles);
+    if (doc && Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        return normalizeCharacterProfileStorePayload(doc.payload);
+    }
     const fallbackRaw = readJsonFileAsIs(
         characterProfileJsonPath,
         { version: 1, updatedAt: null, profiles: {} }
     );
-    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.characterProfiles);
     if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
         await writeAppStatePayloadToMongo(APP_STATE_KEYS.characterProfiles, fallbackRaw, {
             updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
         });
         return normalizeCharacterProfileStorePayload(fallbackRaw);
     }
-    return normalizeCharacterProfileStorePayload(doc.payload);
+    return normalizeCharacterProfileStorePayload(fallbackRaw);
 }
 
 async function writeCharacterProfileStoreForRuntime(store = {}) {
@@ -1487,18 +1493,21 @@ async function readSkillSetPresetStoreForRuntime() {
     if (!canUseMongoStateStore()) {
         return readSkillSetPresetStore();
     }
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.skillSetPresets);
+    if (doc && Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        return normalizeSkillSetPresetStorePayload(doc.payload);
+    }
     const fallbackRaw = readJsonFileAsIs(
         skillSetPresetJsonPath,
         { version: 1, updatedAt: null, presets: {} }
     );
-    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.skillSetPresets);
     if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
         await writeAppStatePayloadToMongo(APP_STATE_KEYS.skillSetPresets, fallbackRaw, {
             updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
         });
         return normalizeSkillSetPresetStorePayload(fallbackRaw);
     }
-    return normalizeSkillSetPresetStorePayload(doc.payload);
+    return normalizeSkillSetPresetStorePayload(fallbackRaw);
 }
 
 async function writeSkillSetPresetStoreForRuntime(store = {}) {
@@ -1630,18 +1639,21 @@ async function readBattleStateStoreFromMongo(options = {}) {
         return { version: 1, updatedAt: null, states: {} };
     }
     void options;
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleState);
+    if (doc && Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        return normalizeBattleStateStorePayload(doc.payload);
+    }
     const fallbackRaw = readJsonFileAsIs(
         battleStateJsonPath,
         { version: 1, updatedAt: null, states: {} }
     );
-    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.battleState);
     if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
         await writeAppStatePayloadToMongo(APP_STATE_KEYS.battleState, fallbackRaw, {
             updatedAt: normalizeText(fallbackRaw?.updatedAt) || null
         });
         return normalizeBattleStateStorePayload(fallbackRaw);
     }
-    return normalizeBattleStateStorePayload(doc.payload);
+    return normalizeBattleStateStorePayload(fallbackRaw);
 }
 
 async function saveBattleStateEntryToMongo(playerId, characterName, state = {}) {
@@ -1998,6 +2010,16 @@ async function readSelectDataLogSnapshotFromMongo() {
         return readSelectDataLogSnapshot();
     }
     await ensureSelectDataLogBufferLoaded();
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.selectDataLog);
+    if (doc && Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        const payload = normalizeSelectDataLogStorePayload(doc.payload);
+        const mergedPayload = {
+            ...payload,
+            entries: [...(payload.entries || []), ...selectDataLogBuffer]
+        };
+        return toSelectDataLogSnapshot(mergedPayload);
+    }
+
     const fallbackRows = parseSelectDataLogRowsFromText(readSelectDataLogSnapshot()?.text || '');
     const fallbackPayload = {
         version: 1,
@@ -2008,7 +2030,6 @@ async function readSelectDataLogSnapshotFromMongo() {
         totalBytes: fallbackRows.reduce((sum, row) => sum + estimateSelectDataLogRowBytes(row), 0),
         entries: fallbackRows
     };
-    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.selectDataLog);
     if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
         await writeAppStatePayloadToMongo(APP_STATE_KEYS.selectDataLog, fallbackPayload, {
             updatedAt: normalizeText(fallbackPayload.updatedAt) || null
@@ -2019,10 +2040,9 @@ async function readSelectDataLogSnapshotFromMongo() {
         };
         return toSelectDataLogSnapshot(mergedPayload);
     }
-    const payload = normalizeSelectDataLogStorePayload(doc.payload);
     const mergedPayload = {
-        ...payload,
-        entries: [...(payload.entries || []), ...selectDataLogBuffer]
+        ...fallbackPayload,
+        entries: [...(fallbackPayload.entries || []), ...selectDataLogBuffer]
     };
     return toSelectDataLogSnapshot(mergedPayload);
 }
