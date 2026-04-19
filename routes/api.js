@@ -2,12 +2,23 @@
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('xlsx');
 const { getAppDataRoot, getLogsDirPath, getMongoConfig } = require('../storage/config');
 const { withMongoClient } = require('../storage/mongo-client');
 
-const filePath = './data.xlsx';
-const excelAbsolutePath = path.resolve(filePath);
+const gameDataDirPath = path.join(process.cwd(), 'game-data');
+const gameDataSkillsJsonPath = path.join(gameDataDirPath, 'スキル.json');
+const gameDataClassesJsonPath = path.join(gameDataDirPath, '職業.json');
+const gameDataItemsJsonCandidates = [
+    path.join(gameDataDirPath, '装備一覧.json'),
+    path.join(gameDataDirPath, '装備.json'),
+    path.join(gameDataDirPath, 'items.json'),
+    path.join(gameDataDirPath, 'ItemList.json')
+];
+const gameDataBodyJsonCandidates = [
+    path.join(gameDataDirPath, '肉体.json'),
+    path.join(gameDataDirPath, 'body.json'),
+    path.join(gameDataDirPath, 'Body.json')
+];
 const appDataRoot = getAppDataRoot();
 const logsDirPath = getLogsDirPath();
 const mongoConfig = getMongoConfig();
@@ -35,30 +46,24 @@ const APP_STATE_KEYS = {
     battleMemo: 'battle-memo',
     battleState: 'battle-state',
     characterProfiles: 'character-profiles',
-    skillSetPresets: 'skill-set-presets'
+    skillSetPresets: 'skill-set-presets',
+    selectDataLog: 'select-data-log'
 };
 const MONGO_COLLECTION = {
-    presence: 'Presence',
-    selectDataLog: 'SelectDataLog'
+    presence: 'Presence'
 };
+const SELECT_LOG_BUFFER_MAX = 50;
+const SELECT_LOG_FLUSH_BATCH_SIZE = 25;
+const SELECT_LOG_FLUSH_INTERVAL_MS = 5 * 60 * 1000;
+const SELECT_LOG_IDLE_FLUSH_MS = 5 * 60 * 1000;
+const SELECT_LOG_EXPORT_THRESHOLD_BYTES = 5 * 1024 * 1024;
+const GAME_DATA_POLL_MS = 60 * 1000;
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
 console.log(`[storage] logsDir=${logsDirPath}`);
 console.log(`[storage] useMongoDB=${mongoConfig.enabled ? 'true' : 'false'}`);
 console.log(`[storage] mongoPrimaryData=${useMongoPrimaryData ? 'true' : 'false'}`);
-
-const SHEET_NAMES = {
-    user: ['userID'],
-    character: ['キャラクター'],
-    classes: ['クラス'],
-    skills: ['スキル'],
-    items: ['装備'],
-    shop: ['ショップ'],
-    team: ['パーティ'],
-    battle: ['戦闘'],
-    body: ['肉体']
-};
 
 const FIELD_KEYS = {
     name: ['名前'],
@@ -882,20 +887,6 @@ function dedupeBy(items, selector) {
     return Array.from(map.values());
 }
 
-function getSheet(workbook, names) {
-    if (!workbook || !workbook.Sheets) return null;
-    for (const name of names) {
-        if (workbook.Sheets[name]) return workbook.Sheets[name];
-    }
-    return null;
-}
-
-function readSheet(workbook, names, defval = 0) {
-    const sheet = getSheet(workbook, names);
-    if (!sheet) return [];
-    return XLSX.utils.sheet_to_json(sheet, { defval });
-}
-
 function buildCharacterSummary(characterData) {
     if (!characterData || typeof characterData !== 'object') return null;
     return {
@@ -1619,7 +1610,7 @@ async function getBattleStateUpdatedAtMsFromMongo() {
     return Math.floor(Number(doc?.updatedAtMs || 0));
 }
 
-function buildSelectDataLogRowForMongo(logEntry = {}) {
+function buildSelectDataLogRow(logEntry = {}) {
     const source = logEntry && typeof logEntry === 'object' && !Array.isArray(logEntry) ? logEntry : {};
     const timestamp = normalizeText(source?.timestamp) || new Date().toISOString();
     const parsedTimestampMs = Date.parse(timestamp);
@@ -1644,43 +1635,56 @@ function buildSelectDataLogRowForMongo(logEntry = {}) {
     };
 }
 
-async function appendSelectDataLogToMongo(logEntry = {}) {
-    if (!canUseMongoStateStore()) return null;
-    const row = buildSelectDataLogRowForMongo(logEntry);
-    await withMongoClient(async ({ db }) => {
-        await db.collection(MONGO_COLLECTION.selectDataLog).insertOne({
-            ...row,
-            updatedAt: new Date().toISOString(),
-            updatedAtMs: Date.now()
-        });
-    }, {
-        uri: mongoConfig.uri,
-        dbName: mongoConfig.dbName
-    });
-    return row;
+function createDefaultSelectDataLogStore() {
+    return {
+        version: 1,
+        updatedAt: null,
+        thresholdBytes: SELECT_LOG_EXPORT_THRESHOLD_BYTES,
+        exportPending: false,
+        totalCount: 0,
+        totalBytes: 0,
+        entries: []
+    };
 }
 
-async function readSelectDataLogSnapshotFromMongo() {
-    if (!canUseMongoStateStore()) {
-        return { exists: false, updatedAt: null, mtimeMs: 0, text: '' };
-    }
-    const docs = await withMongoClient(async ({ db }) => {
-        return db.collection(MONGO_COLLECTION.selectDataLog)
-            .find({})
-            .sort({ timestampMs: -1, _id: -1 })
-            .limit(GM_DASHBOARD_LOG_LIMIT)
-            .toArray();
-    }, {
-        uri: mongoConfig.uri,
-        dbName: mongoConfig.dbName
-    });
-    const rows = (Array.isArray(docs) ? docs : [])
-        .map((doc) => buildSelectDataLogRowForMongo(doc))
-        .sort((a, b) => Number(a.timestampMs || 0) - Number(b.timestampMs || 0));
-    const latestMs = rows.length > 0
-        ? Math.max(...rows.map((row) => Number(row.timestampMs || 0)))
-        : 0;
-    const text = rows.map((row) => JSON.stringify({
+function normalizeSelectDataLogStorePayload(payload = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload)
+        ? payload
+        : {};
+    const entries = (Array.isArray(source?.entries) ? source.entries : [])
+        .map((entry) => buildSelectDataLogRow(entry))
+        .filter((entry) => Boolean(entry?.timestamp));
+    const totalCount = Math.max(
+        Number(entries.length || 0),
+        Math.floor(Number(source?.totalCount || 0))
+    );
+    const totalBytes = Math.max(
+        0,
+        Math.floor(Number(source?.totalBytes || 0))
+    );
+    const thresholdBytes = Math.max(
+        1,
+        Math.floor(Number(source?.thresholdBytes || SELECT_LOG_EXPORT_THRESHOLD_BYTES))
+    );
+    return {
+        version: 1,
+        updatedAt: normalizeText(source?.updatedAt) || null,
+        thresholdBytes,
+        exportPending: Boolean(source?.exportPending),
+        totalCount,
+        totalBytes,
+        entries
+    };
+}
+
+function toSelectDataLogSnapshot(payload = {}, options = {}) {
+    const normalized = normalizeSelectDataLogStorePayload(payload);
+    const limit = Math.max(1, Math.floor(Number(options?.limit || GM_DASHBOARD_LOG_LIMIT)));
+    const entries = normalized.entries.slice(-limit);
+    const latestMs = entries.length > 0
+        ? Math.max(...entries.map((row) => Number(row.timestampMs || 0)))
+        : Math.floor(Number(Date.parse(normalizeText(normalized.updatedAt)) || 0));
+    const text = entries.map((row) => JSON.stringify({
         timestamp: row.timestamp,
         requestId: row.requestId,
         name: row.name,
@@ -1690,38 +1694,307 @@ async function readSelectDataLogSnapshotFromMongo() {
         rollResults: row.rollResults
     })).join('\n');
     return {
-        exists: rows.length > 0,
-        updatedAt: latestMs > 0 ? new Date(latestMs).toISOString() : null,
-        mtimeMs: latestMs,
+        exists: entries.length > 0,
+        updatedAt: latestMs > 0
+            ? new Date(latestMs).toISOString()
+            : (normalizeText(normalized.updatedAt) || null),
+        mtimeMs: latestMs > 0 ? latestMs : 0,
         text
     };
 }
 
-async function getSelectDataLogUpdatedAtMsFromMongo() {
-    if (!canUseMongoStateStore()) return 0;
-    const doc = await withMongoClient(async ({ db }) => {
-        return db.collection(MONGO_COLLECTION.selectDataLog)
-            .find({}, { projection: { timestampMs: 1, updatedAtMs: 1 } })
-            .sort({ timestampMs: -1, updatedAtMs: -1, _id: -1 })
-            .limit(1)
-            .next();
+function estimateSelectDataLogRowBytes(row = {}) {
+    try {
+        return Buffer.byteLength(`${JSON.stringify(row)}\n`, 'utf8');
+    } catch (error) {
+        return 0;
+    }
+}
+
+function parseSelectDataLogRowsFromText(text = '') {
+    const raw = String(text || '');
+    if (!raw.trim()) return [];
+    return raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+            try {
+                return buildSelectDataLogRow(JSON.parse(line));
+            } catch (error) {
+                return null;
+            }
+        })
+        .filter(Boolean);
+}
+
+let selectDataLogFlushInProgress = false;
+let selectDataLogFlushPromise = null;
+let selectDataLogBufferLoaded = false;
+let selectDataLogBuffer = [];
+let selectDataLogFlushTimer = null;
+let selectDataLogHooksRegistered = false;
+let selectDataLogLastActivityMs = 0;
+
+async function ensureSelectDataLogBufferLoaded() {
+    if (selectDataLogBufferLoaded) return;
+    selectDataLogBufferLoaded = true;
+    selectDataLogBuffer = [];
+}
+
+async function appendSelectDataLogRowsToAppState(rows = []) {
+    if (!canUseMongoStateStore()) return null;
+    const batch = (Array.isArray(rows) ? rows : [])
+        .map((row) => buildSelectDataLogRow(row))
+        .filter(Boolean);
+    if (!batch.length) return null;
+    const batchBytes = batch.reduce(
+        (sum, row) => sum + estimateSelectDataLogRowBytes(row),
+        0
+    );
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    await withMongoClient(async ({ db }) => {
+        await db.collection(APP_STATE_COLLECTION).updateOne(
+            { _id: APP_STATE_KEYS.selectDataLog },
+            {
+                $setOnInsert: {
+                    payload: createDefaultSelectDataLogStore(),
+                    updatedAt: nowIso,
+                    updatedAtMs: nowMs,
+                    sourceType: 'json',
+                    payloadUpdatedAt: nowIso,
+                    payloadUpdatedAtMs: nowMs
+                }
+            },
+            { upsert: true }
+        );
+        await db.collection(APP_STATE_COLLECTION).updateOne(
+            { _id: APP_STATE_KEYS.selectDataLog },
+            {
+                $push: {
+                    'payload.entries': { $each: batch }
+                },
+                $inc: {
+                    'payload.totalCount': batch.length,
+                    'payload.totalBytes': batchBytes
+                },
+                $set: {
+                    'payload.version': 1,
+                    'payload.updatedAt': nowIso,
+                    'payload.thresholdBytes': SELECT_LOG_EXPORT_THRESHOLD_BYTES,
+                    updatedAt: nowIso,
+                    updatedAtMs: nowMs,
+                    sourceType: 'json',
+                    payloadUpdatedAt: nowIso,
+                    payloadUpdatedAtMs: nowMs
+                }
+            },
+            { upsert: true }
+        );
+        await db.collection(APP_STATE_COLLECTION).updateOne(
+            {
+                _id: APP_STATE_KEYS.selectDataLog,
+                'payload.totalBytes': { $gt: SELECT_LOG_EXPORT_THRESHOLD_BYTES }
+            },
+            {
+                $set: {
+                    'payload.exportPending': true
+                }
+            }
+        );
     }, {
         uri: mongoConfig.uri,
         dbName: mongoConfig.dbName
     });
-    return Math.floor(Number(doc?.timestampMs || doc?.updatedAtMs || 0));
+    return {
+        count: batch.length,
+        bytes: batchBytes
+    };
+}
+
+async function flushSelectDataLogBuffer(options = {}) {
+    if (!canUseMongoStateStore()) return false;
+    await ensureSelectDataLogBufferLoaded();
+
+    const flushAll = Boolean(options?.flushAll);
+    const allowPartial = Boolean(options?.allowPartial);
+    const maxBatchCountRaw = Number(options?.maxBatchCount);
+    const maxBatchCount = Number.isFinite(maxBatchCountRaw) && maxBatchCountRaw > 0
+        ? Math.floor(maxBatchCountRaw)
+        : Number.POSITIVE_INFINITY;
+    const reason = normalizeText(options?.reason) || 'manual';
+
+    if (selectDataLogFlushInProgress && selectDataLogFlushPromise) {
+        return selectDataLogFlushPromise;
+    }
+
+    selectDataLogFlushInProgress = true;
+    selectDataLogFlushPromise = (async () => {
+        let flushedAny = false;
+        let flushedBatchCount = 0;
+        while (true) {
+            if (flushedBatchCount >= maxBatchCount) break;
+            const flushCount = flushAll
+                ? Math.min(selectDataLogBuffer.length, SELECT_LOG_FLUSH_BATCH_SIZE)
+                : (selectDataLogBuffer.length >= SELECT_LOG_FLUSH_BATCH_SIZE
+                    ? SELECT_LOG_FLUSH_BATCH_SIZE
+                    : (allowPartial && selectDataLogBuffer.length > 0
+                        ? Math.min(selectDataLogBuffer.length, SELECT_LOG_FLUSH_BATCH_SIZE)
+                        : 0));
+            if (flushCount <= 0) break;
+            const batch = selectDataLogBuffer.slice(0, flushCount);
+            await appendSelectDataLogRowsToAppState(batch);
+            selectDataLogBuffer = selectDataLogBuffer.slice(flushCount);
+            flushedAny = true;
+            flushedBatchCount += 1;
+        }
+        if (flushedAny) {
+            console.log(`[select-log] flushed reason=${reason} buffer=${selectDataLogBuffer.length}`);
+        }
+        return flushedAny;
+    })()
+        .finally(() => {
+            selectDataLogFlushInProgress = false;
+            selectDataLogFlushPromise = null;
+        });
+
+    return selectDataLogFlushPromise;
+}
+
+function startSelectDataLogFlushWorker() {
+    if (!canUseMongoStateStore()) return;
+    if (selectDataLogFlushTimer) return;
+    selectDataLogFlushTimer = setInterval(() => {
+        const nowMs = Date.now();
+        const idleMs = selectDataLogLastActivityMs > 0
+            ? nowMs - selectDataLogLastActivityMs
+            : Number.POSITIVE_INFINITY;
+        const hasPending = Array.isArray(selectDataLogBuffer) && selectDataLogBuffer.length > 0;
+        const canBatchFlush = hasPending && selectDataLogBuffer.length >= SELECT_LOG_FLUSH_BATCH_SIZE;
+        const shouldIdleFlush = hasPending && idleMs >= SELECT_LOG_IDLE_FLUSH_MS;
+
+        const flushOptions = canBatchFlush
+            ? { flushAll: false, allowPartial: false, maxBatchCount: 1, reason: 'interval-batch' }
+            : (shouldIdleFlush
+                ? { flushAll: false, allowPartial: true, maxBatchCount: 1, reason: 'interval-idle' }
+                : null);
+        if (!flushOptions) return;
+
+        flushSelectDataLogBuffer(flushOptions).catch((error) => {
+            console.error('select-log interval flush error:', error);
+        });
+    }, SELECT_LOG_FLUSH_INTERVAL_MS);
+    if (typeof selectDataLogFlushTimer?.unref === 'function') {
+        selectDataLogFlushTimer.unref();
+    }
+}
+
+function registerSelectDataLogShutdownHooks() {
+    if (!canUseMongoStateStore()) return;
+    if (selectDataLogHooksRegistered) return;
+    selectDataLogHooksRegistered = true;
+    const flushOnExit = () => {
+        flushSelectDataLogBuffer({ flushAll: true, reason: 'shutdown' }).catch((error) => {
+            console.error('select-log shutdown flush error:', error);
+        });
+    };
+    process.on('beforeExit', flushOnExit);
+}
+
+startSelectDataLogFlushWorker();
+registerSelectDataLogShutdownHooks();
+
+async function enqueueSelectDataLogRow(logEntry = {}) {
+    if (!canUseMongoStateStore()) return null;
+    await ensureSelectDataLogBufferLoaded();
+    const row = buildSelectDataLogRow(logEntry);
+    selectDataLogBuffer.push(row);
+    selectDataLogLastActivityMs = Date.now();
+    if (selectDataLogBuffer.length > SELECT_LOG_BUFFER_MAX) {
+        await flushSelectDataLogBuffer({
+            flushAll: false,
+            allowPartial: false,
+            maxBatchCount: 1,
+            reason: 'buffer-overflow'
+        });
+    }
+    return row;
+}
+
+async function readSelectDataLogSnapshotFromMongo() {
+    if (!canUseMongoStateStore()) {
+        return readSelectDataLogSnapshot();
+    }
+    await ensureSelectDataLogBufferLoaded();
+    const fallbackRows = parseSelectDataLogRowsFromText(readSelectDataLogSnapshot()?.text || '');
+    const fallbackPayload = {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        thresholdBytes: SELECT_LOG_EXPORT_THRESHOLD_BYTES,
+        exportPending: false,
+        totalCount: fallbackRows.length,
+        totalBytes: fallbackRows.reduce((sum, row) => sum + estimateSelectDataLogRowBytes(row), 0),
+        entries: fallbackRows
+    };
+    const doc = await fetchAppStateDocFromMongo(APP_STATE_KEYS.selectDataLog);
+    if (!doc || !Object.prototype.hasOwnProperty.call(doc, 'payload')) {
+        await writeAppStatePayloadToMongo(APP_STATE_KEYS.selectDataLog, fallbackPayload, {
+            updatedAt: normalizeText(fallbackPayload.updatedAt) || null
+        });
+        const mergedPayload = {
+            ...fallbackPayload,
+            entries: [...(fallbackPayload.entries || []), ...selectDataLogBuffer]
+        };
+        return toSelectDataLogSnapshot(mergedPayload);
+    }
+    const payload = normalizeSelectDataLogStorePayload(doc.payload);
+    const mergedPayload = {
+        ...payload,
+        entries: [...(payload.entries || []), ...selectDataLogBuffer]
+    };
+    return toSelectDataLogSnapshot(mergedPayload);
+}
+
+async function getSelectDataLogUpdatedAtMsFromMongo() {
+    if (!canUseMongoStateStore()) return 0;
+    await ensureSelectDataLogBufferLoaded();
+    const doc = await withMongoClient(async ({ db }) => {
+        return db.collection(APP_STATE_COLLECTION).findOne(
+            { _id: APP_STATE_KEYS.selectDataLog },
+            {
+                projection: {
+                    payloadUpdatedAtMs: 1,
+                    updatedAtMs: 1,
+                    payload: { updatedAt: 1 }
+                }
+            }
+        );
+    }, {
+        uri: mongoConfig.uri,
+        dbName: mongoConfig.dbName
+    });
+    const payloadMs = Math.floor(Number(doc?.payloadUpdatedAtMs || 0));
+    const bufferMs = selectDataLogBuffer.length > 0
+        ? Math.max(...selectDataLogBuffer.map((row) => Number(row?.timestampMs || 0)))
+        : 0;
+    if (payloadMs > 0 || bufferMs > 0) {
+        return Math.max(payloadMs, bufferMs);
+    }
+    const payloadUpdatedAt = Date.parse(normalizeText(doc?.payload?.updatedAt || ''));
+    if (Number.isFinite(payloadUpdatedAt)) return Math.max(Math.floor(payloadUpdatedAt), bufferMs);
+    return Math.floor(Number(doc?.updatedAtMs || 0));
 }
 
 async function getGmDashboardUpdatedAtMsAsync() {
     if (!canUseMongoStateStore()) {
         return getGmDashboardUpdatedAtMs();
     }
-    const selectMeta = getFileUpdatedMeta(selectDataLogPath);
-    const [battleMs, presenceMs] = await Promise.all([
+    const [selectMs, battleMs, presenceMs] = await Promise.all([
+        getSelectDataLogUpdatedAtMsFromMongo(),
         getBattleStateUpdatedAtMsFromMongo(),
         getStoryPresenceUpdatedAtMsFromMongo()
     ]);
-    const selectMs = Number(selectMeta?.mtimeMs || 0);
     return resolveLatestMs([selectMs, battleMs, presenceMs]);
 }
 
@@ -1828,14 +2101,177 @@ let cachedCharacters = [];
 let cachedClasses = [];
 let cachedSkills = [];
 let cachedItems = [];
-let cachedShop = [];
-let cachedTeam = [];
-let cachedBattle = [];
 let cachedBody = [];
+let gameDataItemsLoaded = false;
+let gameDataSkillsLoaded = false;
+let gameDataClassesLoaded = false;
+let gameDataBodyLoaded = false;
+let gameDataItemsMtimeMs = 0;
+let gameDataSkillsMtimeMs = 0;
+let gameDataClassesMtimeMs = 0;
+let gameDataBodyMtimeMs = 0;
 let mongoPrimaryReloadInProgress = false;
 let mongoPrimaryReloadPromise = null;
 let mongoPrimaryLastLoadedAtMs = 0;
 const MONGO_PRIMARY_POLL_MS = 30 * 1000;
+
+function getFileMtimeMsSafe(targetPath = '') {
+    try {
+        const stat = fs.statSync(targetPath);
+        return Math.floor(Number(stat?.mtimeMs) || 0);
+    } catch (error) {
+        return 0;
+    }
+}
+
+function readJsonArrayFile(filePath = '') {
+    if (!filePath || !fs.existsSync(filePath)) return [];
+    try {
+        const raw = fs.readFileSync(filePath, 'utf8');
+        const normalizedRaw = String(raw || '').replace(/^\uFEFF/, '');
+        if (!normalizedRaw.trim()) return [];
+        const parsed = JSON.parse(normalizedRaw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+    } catch (error) {
+        console.error(`[game-data] failed to parse ${filePath}:`, error?.message || error);
+        return [];
+    }
+}
+
+function loadGameDataSkills(forceReload = false) {
+    if (!fs.existsSync(gameDataSkillsJsonPath)) return false;
+    const mtimeMs = getFileMtimeMsSafe(gameDataSkillsJsonPath);
+    if (!forceReload && gameDataSkillsLoaded && mtimeMs && mtimeMs === gameDataSkillsMtimeMs) {
+        return false;
+    }
+    const rows = readJsonArrayFile(gameDataSkillsJsonPath);
+    cachedSkills = dedupeBy(
+        rows,
+        (row) => pickFirstText(row, FIELD_KEYS.skillName)
+    );
+    gameDataSkillsLoaded = true;
+    gameDataSkillsMtimeMs = mtimeMs;
+    console.log(`[game-data] skills loaded count=${cachedSkills.length}`);
+    return true;
+}
+
+function loadGameDataClasses(forceReload = false) {
+    if (!fs.existsSync(gameDataClassesJsonPath)) return false;
+    const mtimeMs = getFileMtimeMsSafe(gameDataClassesJsonPath);
+    if (!forceReload && gameDataClassesLoaded && mtimeMs && mtimeMs === gameDataClassesMtimeMs) {
+        return false;
+    }
+    const rows = readJsonArrayFile(gameDataClassesJsonPath);
+    cachedClasses = dedupeBy(
+        rows,
+        (row) => pickFirstText(row, FIELD_KEYS.className)
+    );
+    gameDataClassesLoaded = true;
+    gameDataClassesMtimeMs = mtimeMs;
+    console.log(`[game-data] classes loaded count=${cachedClasses.length}`);
+    return true;
+}
+
+function resolveGameDataItemsJsonPath() {
+    for (const candidatePath of gameDataItemsJsonCandidates) {
+        if (fs.existsSync(candidatePath)) return candidatePath;
+    }
+    return '';
+}
+
+function loadGameDataItems(forceReload = false) {
+    const itemsJsonPath = resolveGameDataItemsJsonPath();
+    if (!itemsJsonPath) {
+        if (!gameDataItemsLoaded) {
+            cachedItems = [];
+            gameDataItemsLoaded = true;
+            gameDataItemsMtimeMs = 0;
+            console.log('[game-data] items data file not found; using empty item cache');
+            return true;
+        }
+        return false;
+    }
+    const mtimeMs = getFileMtimeMsSafe(itemsJsonPath);
+    if (!forceReload && gameDataItemsLoaded && mtimeMs && mtimeMs === gameDataItemsMtimeMs) {
+        return false;
+    }
+    const rows = readJsonArrayFile(itemsJsonPath);
+    cachedItems = dedupeBy(
+        rows,
+        (row) => pickFirstText(row, FIELD_KEYS.name)
+    );
+    gameDataItemsLoaded = true;
+    gameDataItemsMtimeMs = mtimeMs;
+    console.log(`[game-data] items loaded count=${cachedItems.length}`);
+    return true;
+}
+
+function resolveGameDataBodyJsonPath() {
+    for (const candidatePath of gameDataBodyJsonCandidates) {
+        if (fs.existsSync(candidatePath)) return candidatePath;
+    }
+    return '';
+}
+
+function loadGameDataBody(forceReload = false) {
+    const bodyJsonPath = resolveGameDataBodyJsonPath();
+    if (!bodyJsonPath) {
+        if (!gameDataBodyLoaded) {
+            cachedBody = [];
+            gameDataBodyLoaded = true;
+            gameDataBodyMtimeMs = 0;
+            console.log('[game-data] body data file not found; using empty body cache');
+            return true;
+        }
+        return false;
+    }
+    const mtimeMs = getFileMtimeMsSafe(bodyJsonPath);
+    if (!forceReload && gameDataBodyLoaded && mtimeMs && mtimeMs === gameDataBodyMtimeMs) {
+        return false;
+    }
+    const rows = readJsonArrayFile(bodyJsonPath);
+    cachedBody = dedupeBy(
+        rows,
+        (row) => pickFirstText(row, FIELD_KEYS.bodyNo)
+    );
+    gameDataBodyLoaded = true;
+    gameDataBodyMtimeMs = mtimeMs;
+    console.log(`[game-data] body loaded count=${cachedBody.length}`);
+    return true;
+}
+
+function loadGameDataMaster(forceReload = false) {
+    const loadedItems = loadGameDataItems(forceReload);
+    const loadedSkills = loadGameDataSkills(forceReload);
+    const loadedClasses = loadGameDataClasses(forceReload);
+    const loadedBody = loadGameDataBody(forceReload);
+    return loadedItems || loadedSkills || loadedClasses || loadedBody;
+}
+
+function ensureGameDataMasterLoaded() {
+    if (!gameDataItemsLoaded || !gameDataSkillsLoaded || !gameDataClassesLoaded || !gameDataBodyLoaded) {
+        loadGameDataMaster(true);
+        return;
+    }
+    loadGameDataMaster(false);
+}
+
+function ensureGameDataItemsLoaded() {
+    if (!gameDataItemsLoaded) {
+        loadGameDataItems(true);
+        return;
+    }
+    loadGameDataItems(false);
+}
+
+function ensureGameDataBodyLoaded() {
+    if (!gameDataBodyLoaded) {
+        loadGameDataBody(true);
+        return;
+    }
+    loadGameDataBody(false);
+}
 
 function normalizeMongoIdValue(value) {
     if (typeof value === 'string') return value;
@@ -1864,79 +2300,6 @@ function normalizeMongoCharacterRow(row = {}) {
     return normalized;
 }
 
-function normalizeMongoItemRow(row = {}) {
-    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
-    const normalized = { ...source };
-    if (!pickFirstText(normalized, FIELD_KEYS.name)) {
-        normalized.名前 = normalizeMongoIdValue(source?._id);
-    }
-    return normalized;
-}
-
-function normalizeMongoSkillRow(row = {}) {
-    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
-    const normalized = { ...source };
-    if (!pickFirstText(normalized, FIELD_KEYS.skillName)) {
-        normalized.和名 = normalizeMongoIdValue(source?._id);
-    }
-    return normalized;
-}
-
-async function fetchSkillsByNamesFromMongo(skillNames = []) {
-    if (!useMongoPrimaryData) return [];
-    const normalizedNames = Array.from(new Set(
-        (Array.isArray(skillNames) ? skillNames : [skillNames])
-            .map((name) => normalizeText(name))
-            .filter(Boolean)
-    ));
-    if (!normalizedNames.length) return [];
-
-    try {
-        const docs = await withMongoClient(async ({ db }) => {
-            return db.collection('Skill')
-                .find({ 和名: { $in: normalizedNames } })
-                .toArray();
-        }, {
-            uri: mongoConfig.uri,
-            dbName: mongoConfig.dbName
-        });
-        return (Array.isArray(docs) ? docs : []).map((row) => normalizeMongoSkillRow(row));
-    } catch (error) {
-        console.error('[mongo] skill by names load failed:', error?.message || error);
-        return [];
-    }
-}
-
-async function fetchItemsByNamesFromMongo(itemNames = []) {
-    if (!useMongoPrimaryData) return [];
-    const normalizedNames = Array.from(new Set(
-        (Array.isArray(itemNames) ? itemNames : [itemNames])
-            .map((name) => normalizeItemLookupName(name))
-            .filter(Boolean)
-    ));
-    if (!normalizedNames.length) return [];
-
-    try {
-        const docs = await withMongoClient(async ({ db }) => {
-            return db.collection('ItemList')
-                .find({
-                    $or: [
-                        { 名前: { $in: normalizedNames } },
-                        { name: { $in: normalizedNames } }
-                    ]
-                })
-                .toArray();
-        }, {
-            uri: mongoConfig.uri,
-            dbName: mongoConfig.dbName
-        });
-        return (Array.isArray(docs) ? docs : []).map((row) => normalizeMongoItemRow(row));
-    } catch (error) {
-        console.error('[mongo] item by names load failed:', error?.message || error);
-        return [];
-    }
-}
-
 async function loadMongoPrimaryData(forceReload = false) {
     if (!useMongoPrimaryData) return false;
     if (mongoPrimaryReloadInProgress && mongoPrimaryReloadPromise) {
@@ -1950,28 +2313,18 @@ async function loadMongoPrimaryData(forceReload = false) {
     mongoPrimaryReloadPromise = (async () => {
         try {
             const loaded = await withMongoClient(async ({ db }) => {
-                const [users, characters, items, skills] = await Promise.all([
+                const [users, characters] = await Promise.all([
                     db.collection('User').find({}).toArray(),
-                    db.collection('Character').find({}).toArray(),
-                    db.collection('ItemList').find({}).toArray(),
-                    db.collection('Skill').find({}).toArray()
+                    db.collection('Character').find({}).toArray()
                 ]);
 
                 cachedUsers = (Array.isArray(users) ? users : []).map((row) => normalizeMongoUserRow(row));
                 cachedCharacters = (Array.isArray(characters) ? characters : []).map((row) => normalizeMongoCharacterRow(row));
-                cachedItems = dedupeBy(
-                    (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
-                    (item) => pickFirstText(item, FIELD_KEYS.name)
-                );
-                cachedSkills = dedupeBy(
-                    (Array.isArray(skills) ? skills : []).map((row) => normalizeMongoSkillRow(row)),
-                    (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
-                );
                 return {
                     users: cachedUsers.length,
                     characters: cachedCharacters.length,
-                    items: cachedItems.length,
-                    skills: cachedSkills.length
+                    itemCache: cachedItems.length,
+                    skillCache: cachedSkills.length
                 };
             }, {
                 uri: mongoConfig.uri,
@@ -1979,7 +2332,10 @@ async function loadMongoPrimaryData(forceReload = false) {
             });
 
             mongoPrimaryLastLoadedAtMs = Date.now();
-            console.log(`[mongo] primary loaded users=${loaded.users} characters=${loaded.characters} items=${loaded.items} skills=${loaded.skills}`);
+            console.log(
+                `[mongo] primary loaded users=${loaded.users} characters=${loaded.characters}`
+                + ` itemCache=${loaded.itemCache} skillCache=${loaded.skillCache}`
+            );
             return true;
         } catch (error) {
             console.error('[mongo] primary load failed:', error?.message || error);
@@ -1997,17 +2353,13 @@ async function loadMongoRequestedData(options = {}) {
     if (!useMongoPrimaryData) return false;
     const requestUsers = Boolean(options?.users);
     const requestCharacters = Boolean(options?.characters);
-    const requestItems = Boolean(options?.items);
-    const requestSkills = Boolean(options?.skills);
-    if (!requestUsers && !requestCharacters && !requestItems && !requestSkills) {
+    if (!requestUsers && !requestCharacters) {
         return false;
     }
     if (mongoPrimaryReloadInProgress && mongoPrimaryReloadPromise) {
         const hasUsers = !requestUsers || (Array.isArray(cachedUsers) && cachedUsers.length > 0);
         const hasCharacters = !requestCharacters || (Array.isArray(cachedCharacters) && cachedCharacters.length > 0);
-        const hasItems = !requestItems || (Array.isArray(cachedItems) && cachedItems.length > 0);
-        const hasSkills = !requestSkills || (Array.isArray(cachedSkills) && cachedSkills.length > 0);
-        if (hasUsers && hasCharacters && hasItems && hasSkills) {
+        if (hasUsers && hasCharacters) {
             return true;
         }
         // 初回全件ロード中でも、必要データが無ければ個別ロードを優先して待ち時間を減らす。
@@ -2030,32 +2382,10 @@ async function loadMongoRequestedData(options = {}) {
                     })
                 );
             }
-            if (requestItems) {
-                jobs.push(
-                    db.collection('ItemList').find({}).toArray().then((items) => {
-                        cachedItems = dedupeBy(
-                            (Array.isArray(items) ? items : []).map((row) => normalizeMongoItemRow(row)),
-                            (item) => pickFirstText(item, FIELD_KEYS.name)
-                        );
-                    })
-                );
-            }
-            if (requestSkills) {
-                jobs.push(
-                    db.collection('Skill').find({}).toArray().then((skills) => {
-                        cachedSkills = dedupeBy(
-                            (Array.isArray(skills) ? skills : []).map((row) => normalizeMongoSkillRow(row)),
-                            (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
-                        );
-                    })
-                );
-            }
             await Promise.all(jobs);
             return {
                 users: requestUsers ? cachedUsers.length : null,
-                characters: requestCharacters ? cachedCharacters.length : null,
-                items: requestItems ? cachedItems.length : null,
-                skills: requestSkills ? cachedSkills.length : null
+                characters: requestCharacters ? cachedCharacters.length : null
             };
         }, {
             uri: mongoConfig.uri,
@@ -2067,8 +2397,6 @@ async function loadMongoRequestedData(options = {}) {
             `[mongo] targeted loaded`
             + `${requestUsers ? ` users=${loaded.users}` : ''}`
             + `${requestCharacters ? ` characters=${loaded.characters}` : ''}`
-            + `${requestItems ? ` items=${loaded.items}` : ''}`
-            + `${requestSkills ? ` skills=${loaded.skills}` : ''}`
         );
         return true;
     } catch (error) {
@@ -2082,9 +2410,7 @@ async function ensureMongoPrimaryCache(options = {}) {
 
     const needsUsers = Boolean(options?.users) && (!Array.isArray(cachedUsers) || cachedUsers.length === 0);
     const needsCharacters = Boolean(options?.characters) && (!Array.isArray(cachedCharacters) || cachedCharacters.length === 0);
-    const needsItems = Boolean(options?.items) && (!Array.isArray(cachedItems) || cachedItems.length === 0);
-    const needsSkills = Boolean(options?.skills) && (!Array.isArray(cachedSkills) || cachedSkills.length === 0);
-    const forceReload = needsUsers || needsCharacters || needsItems || needsSkills;
+    const forceReload = needsUsers || needsCharacters;
 
     if (forceReload) {
         await loadMongoRequestedData(options);
@@ -2097,181 +2423,18 @@ async function ensureMongoPrimaryCache(options = {}) {
     });
 }
 
-// Excel 再読込制御
-let excelLastMtimeMs = 0;
-let excelReloadInProgress = false;
-let excelReloadTimer = null;
-let excelWatcher = null;
-
-function getExcelMtimeMs() {
-    try {
-        const stat = fs.statSync(excelAbsolutePath);
-        return Number(stat?.mtimeMs) || 0;
-    } catch (error) {
-        return 0;
-    }
-}
-
-function loadExcelData(forceReload = false) {
-    if (excelReloadInProgress) return false;
-
-    const currentMtimeMs = getExcelMtimeMs();
-    if (!forceReload && currentMtimeMs && currentMtimeMs === excelLastMtimeMs) {
-        return false;
-    }
-
-    excelReloadInProgress = true;
-    try {
-        const workbook = XLSX.readFile(filePath);
-
-        const needsExcelPrimaryFallback = (
-            !useMongoPrimaryData
-            || !Array.isArray(cachedUsers) || cachedUsers.length === 0
-            || !Array.isArray(cachedCharacters) || cachedCharacters.length === 0
-            || !Array.isArray(cachedItems) || cachedItems.length === 0
-        );
-        const excelUsers = needsExcelPrimaryFallback
-            ? readSheet(workbook, SHEET_NAMES.user, null)
-            : null;
-        const excelCharacters = needsExcelPrimaryFallback
-            ? readSheet(workbook, SHEET_NAMES.character, null)
-            : null;
-        const needsExcelSkillFallback = (
-            !useMongoPrimaryData
-            || !Array.isArray(cachedSkills) || cachedSkills.length === 0
-        );
-        const excelSkills = needsExcelSkillFallback
-            ? dedupeBy(
-                readSheet(workbook, SHEET_NAMES.skills, 0),
-                (item) => pickFirstText(item, FIELD_KEYS.skillName)
-            )
-            : null;
-        cachedClasses = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.classes, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.className)
-        );
-        const excelItems = needsExcelPrimaryFallback
-            ? dedupeBy(
-                readSheet(workbook, SHEET_NAMES.items, 0),
-                (item) => pickFirstText(item, FIELD_KEYS.name)
-            )
-            : null;
-        cachedShop = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.shop, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.skillName)
-        );
-        cachedTeam = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.team, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.teamName)
-        );
-        cachedBattle = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.battle, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.name)
-        );
-        cachedBody = dedupeBy(
-            readSheet(workbook, SHEET_NAMES.body, 0),
-            (item) => pickFirstText(item, FIELD_KEYS.bodyNo)
-        );
-
-        if (!useMongoPrimaryData) {
-            cachedUsers = excelUsers;
-            cachedCharacters = excelCharacters;
-            cachedSkills = excelSkills;
-            cachedItems = excelItems;
-        } else {
-            if ((!Array.isArray(cachedUsers) || cachedUsers.length === 0) && Array.isArray(excelUsers)) {
-                cachedUsers = excelUsers;
-            }
-            if ((!Array.isArray(cachedCharacters) || cachedCharacters.length === 0) && Array.isArray(excelCharacters)) {
-                cachedCharacters = excelCharacters;
-            }
-            if ((!Array.isArray(cachedSkills) || cachedSkills.length === 0) && Array.isArray(excelSkills)) {
-                cachedSkills = excelSkills;
-            }
-            if ((!Array.isArray(cachedItems) || cachedItems.length === 0) && Array.isArray(excelItems)) {
-                cachedItems = excelItems;
-            }
-        }
-
-        excelLastMtimeMs = currentMtimeMs || getExcelMtimeMs();
-        console.log('Excel data loaded successfully');
-        return true;
-    } catch (error) {
-        console.error('Failed to load Excel data:', error);
-        return false;
-    } finally {
-        excelReloadInProgress = false;
-    }
-}
-
-function scheduleExcelReload(reason = 'watch') {
-    if (excelReloadTimer) {
-        clearTimeout(excelReloadTimer);
-    }
-    excelReloadTimer = setTimeout(() => {
-        const loaded = loadExcelData(true);
-        if (loaded) {
-            console.log(`[excel] reloaded (${reason})`);
-            return;
-        }
-        // 保存中に一時ロックされるケースの再試行
-        setTimeout(() => {
-            loadExcelData(true);
-        }, 800);
-    }, 300);
-}
-
-function watchExcelFile() {
-    if (excelWatcher) return;
-    const watchDir = path.dirname(excelAbsolutePath);
-    const watchFileName = path.basename(excelAbsolutePath);
-
-    try {
-        excelWatcher = fs.watch(watchDir, (eventType, filename) => {
-            if (!filename) return;
-            if (String(filename) !== watchFileName) return;
-            scheduleExcelReload(`fs.watch:${eventType}`);
-        });
-        console.log(`[excel] watching ${excelAbsolutePath}`);
-    } catch (error) {
-        console.warn('[excel] fs.watch setup failed:', error?.message || error);
-    }
-}
-
-function ensureExcelReferenceCacheLoaded() {
-    const hasClasses = Array.isArray(cachedClasses) && cachedClasses.length > 0;
-    const hasBody = Array.isArray(cachedBody) && cachedBody.length > 0;
-    if (hasClasses && hasBody) {
-        return;
-    }
-    loadExcelData(true);
-}
-
-if (!useMongoPrimaryData) {
-    loadExcelData(true);
-}
+loadGameDataMaster(true);
 setInterval(() => {
-    loadExcelData(false);
-}, 60 * 60 * 1000);
+    loadGameDataMaster(false);
+}, GAME_DATA_POLL_MS);
 if (useMongoPrimaryData) {
     setInterval(() => {
         loadMongoPrimaryData(false);
     }, MONGO_PRIMARY_POLL_MS);
 }
-watchExcelFile();
-
-// 監視取りこぼし時の最終保険
-router.use((req, res, next) => {
-    if (useMongoPrimaryData) {
-        next();
-        return;
-    }
-    const currentMtimeMs = getExcelMtimeMs();
-    if (currentMtimeMs && currentMtimeMs !== excelLastMtimeMs) {
-        loadExcelData(true);
-    }
-    next();
-});
+if (!useMongoPrimaryData) {
+    console.warn('[storage] mongoPrimaryData=false and Excel fallback is disabled.');
+}
 
 router.get('/character', async (req, res) => {
     try {
@@ -2351,18 +2514,13 @@ router.post('/login', async (req, res) => {
 
 router.post('/skills', async (req, res) => {
     try {
+        ensureGameDataMasterLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
         }
         const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-        let sourceSkills = cachedSkills;
-        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
-            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
-        } else {
-            await ensureMongoPrimaryCache({ skills: true });
-            sourceSkills = cachedSkills;
-        }
+        const sourceSkills = cachedSkills;
 
         const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
             .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
@@ -2383,6 +2541,7 @@ router.post('/skills', async (req, res) => {
 
 router.post('/getSkillByName', async (req, res) => {
     try {
+        ensureGameDataMasterLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
@@ -2393,13 +2552,7 @@ router.post('/getSkillByName', async (req, res) => {
         }
 
         const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-        let sourceSkills = cachedSkills;
-        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
-            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
-        } else {
-            await ensureMongoPrimaryCache({ skills: true });
-            sourceSkills = cachedSkills;
-        }
+        const sourceSkills = cachedSkills;
         const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
             .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)));
 
@@ -2416,18 +2569,13 @@ router.post('/getSkillByName', async (req, res) => {
 
 router.post('/magics', async (req, res) => {
     try {
+        ensureGameDataMasterLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
         }
         const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
-        let sourceSkills = cachedSkills;
-        if (useMongoPrimaryData && (!Array.isArray(cachedSkills) || cachedSkills.length === 0)) {
-            sourceSkills = await fetchSkillsByNamesFromMongo(Array.from(nameSet));
-        } else {
-            await ensureMongoPrimaryCache({ skills: true });
-            sourceSkills = cachedSkills;
-        }
+        const sourceSkills = cachedSkills;
 
         const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
             .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
@@ -2447,7 +2595,7 @@ router.post('/magics', async (req, res) => {
 });
 
 router.post('/classes', (req, res) => {
-    ensureExcelReferenceCacheLoaded();
+    ensureGameDataMasterLoaded();
     const { classList } = req.body;
     const classesToMatch = Array.isArray(classList) ? classList : [classList];
     const nameSet = new Set(classesToMatch.map((name) => normalizeText(name)).filter(Boolean));
@@ -2461,14 +2609,14 @@ router.post('/classes', (req, res) => {
 
 router.post('/body', (req, res) => {
     try {
-        ensureExcelReferenceCacheLoaded();
+        ensureGameDataBodyLoaded();
         const { bodyTypeList } = req.body;
         const typesToMatch = Array.isArray(bodyTypeList)
             ? bodyTypeList.map((v) => normalizeText(v)).filter(Boolean)
             : (bodyTypeList ? [normalizeText(bodyTypeList)] : []);
 
         const typeSet = new Set(typesToMatch);
-        const matchedBodyTypes = cachedBody.filter((bodyData) => (
+        const matchedBodyTypes = (Array.isArray(cachedBody) ? cachedBody : []).filter((bodyData) => (
             typeSet.has(pickFirstText(bodyData, FIELD_KEYS.bodyNo))
         ));
 
@@ -2481,6 +2629,7 @@ router.post('/body', (req, res) => {
 
 router.post('/items', async (req, res) => {
     try {
+        ensureGameDataItemsLoaded();
         const { itemList } = req.body;
         const itemsToMatch = (Array.isArray(itemList) ? itemList : [itemList])
             .map((itemName) => normalizeItemLookupName(itemName))
@@ -2488,25 +2637,6 @@ router.post('/items', async (req, res) => {
 
         if (!itemsToMatch.length) {
             return res.json({ success: true, itemData: [] });
-        }
-
-        if (useMongoPrimaryData) {
-            const mongoItems = await fetchItemsByNamesFromMongo(itemsToMatch);
-            const groupedByName = new Map();
-            (Array.isArray(mongoItems) ? mongoItems : []).forEach((itemData) => {
-                const name = pickFirstText(itemData, FIELD_KEYS.name);
-                if (!name) return;
-                if (!groupedByName.has(name)) groupedByName.set(name, []);
-                groupedByName.get(name).push(itemData);
-            });
-
-            const matchedItems = [];
-            itemsToMatch.forEach((itemName) => {
-                const foundItems = groupedByName.get(itemName) || [];
-                matchedItems.push(...foundItems);
-            });
-
-            return res.json({ success: true, itemData: matchedItems });
         }
 
         if (!cachedItems || !Array.isArray(cachedItems)) {
@@ -3097,11 +3227,14 @@ router.get('/gm/dashboard', async (req, res) => {
             });
         }
 
-        await ensureMongoPrimaryCache({ characters: true, skills: true });
+        await ensureMongoPrimaryCache({ characters: true });
+        ensureGameDataMasterLoaded();
         if (canUseMongoStateStore()) {
             await refreshPresenceMapFromMongo(storyConnectedPlayerMap, 'story');
         }
-        const selectDataLog = readSelectDataLogSnapshot();
+        const selectDataLog = canUseMongoStateStore()
+            ? await readSelectDataLogSnapshotFromMongo()
+            : readSelectDataLogSnapshot();
         const battleStateStore = canUseMongoStateStore()
             ? await readBattleStateStoreFromMongo()
             : readBattleStateStore();
@@ -3151,8 +3284,12 @@ router.post('/select_dataLog', async (req, res) => {
             rollResults
         };
 
-        fs.mkdirSync(path.dirname(selectDataLogPath), { recursive: true });
-        fs.appendFileSync(selectDataLogPath, `${JSON.stringify(logEntry)}\n`, 'utf8');
+        if (canUseMongoStateStore()) {
+            await enqueueSelectDataLogRow(logEntry);
+        } else {
+            fs.mkdirSync(path.dirname(selectDataLogPath), { recursive: true });
+            fs.appendFileSync(selectDataLogPath, `${JSON.stringify(logEntry)}\n`, 'utf8');
+        }
 
         res.status(200).json({
             success: true,

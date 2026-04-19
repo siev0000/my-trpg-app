@@ -827,3 +827,4 @@ requestId	log-mo3v74w0-0cwupj
 {"timestamp":"2026-04-18T10:48:10.416Z","requestId":"log-mo47rhdc-fkxh95","name":"クルーツェル","attackOption":"武器","fullPower":0,"skills":["防御","光の護り手","不落要塞","不動反射"],"rollResults":["94"]}
 {"timestamp":"2026-04-18T11:10:22.250Z","requestId":"log-mo48k10q-pkco2k","name":"リコリス","attackOption":"斬","fullPower":1,"skills":["魔法順位向上1ST"],"rollResults":["73","28"]}
 {"timestamp":"2026-04-18T15:38:23.336Z","requestId":"log-mo4i4p9k-jdm6qx","name":"クルーツェル","attackOption":"武器2","fullPower":0,"skills":["切断","炎の魔装","炎の波動放出","不動反射"],"rollResults":["51"]}
+{"timestamp":"2026-04-18T16:22:03.016Z","requestId":"log-mo4joumg-3fjqrj","name":"リコリス","attackOption":"武器","fullPower":1,"skills":["切断","無灯一輪","闇の波動放出","直進する波動"],"rollResults":["98"]}

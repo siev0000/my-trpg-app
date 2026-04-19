@@ -108,12 +108,11 @@ npm run dev:api:mongo
 
 ### 実行コマンド
 
-```powershell
-# 変換確認（DBは更新しない）
-npm run mongo:migrate:excel -- --dry-run
+Excel移行スクリプトは削除済み。
+現在は JSON 移行のみ対応:
 
-# 登録実行
-npm run mongo:migrate:excel
+```powershell
+npm run mongo:migrate
 ```
 
 ### 変換ルール
