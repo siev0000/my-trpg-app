@@ -104,6 +104,9 @@ async function displayCharacters(characters) {
         : String(characters[0]?.name || '').trim();
 
     characters.forEach((character, index) => {
+        if (!character || typeof character !== "object") {
+            return;
+        }
         const characterContainer = document.createElement('div');
         characterContainer.classList.add('character-container');
     
@@ -140,7 +143,9 @@ async function displayCharacters(characters) {
         nameElem.textContent = `${character.name}`; //名前: 
         const levelElem = document.createElement('p');
         levelElem.classList.add('character-meta');
-        levelElem.textContent = `Lv: ${character.stats.allLv / 10} Ef: ${character.stats.allEf}`;
+        const allLv = Number(character?.stats?.allLv || 0);
+        const allEf = Number(character?.stats?.allEf || 0);
+        levelElem.textContent = `Lv: ${allLv / 10} Ef: ${allEf}`;
 
         const resources = getCharacterResourceSummary(character);
 
@@ -198,4 +203,3 @@ function createStatusBar(label, currentValue, maxValue) {
 
     return container;
 }
-

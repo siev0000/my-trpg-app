@@ -1485,6 +1485,12 @@ async function acquireCharacterData(character) {
 
 
     returnCharacterData.skills = await fetchSkills(addArrayToArray((allUniqueSkills).filter(name => name !== '魔法強化取得'), addSkill))
+    if (!returnCharacterData.skills || typeof returnCharacterData.skills !== "object") {
+        returnCharacterData.skills = {};
+    }
+    if (!Array.isArray(returnCharacterData.skills.P)) {
+        returnCharacterData.skills.P = [];
+    }
     const magicEnhanceCount = allCollectedSkills.filter((name) => (
         String(name ?? "").trim() === "魔法強化取得"
     )).length;
@@ -1955,15 +1961,28 @@ async function fetchSkills(skillList) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ skillNames: skillList })
         });
-        const result = await response.json();
-
-        if (result.success) {
-            return result.skills
-        } else {
-            console.error('スキルデータの取得に失敗しました');
+        const raw = await response.text();
+        let result = null;
+        try {
+            result = raw ? JSON.parse(raw) : null;
+        } catch (parseError) {
+            console.error('スキルデータ取得エラー: JSON解析失敗', parseError);
+            return {};
         }
+
+        if (!response.ok) {
+            console.error('スキルデータの取得に失敗しました:', result?.message || `HTTP ${response.status}`);
+            return {};
+        }
+
+        if (result?.success && result?.skills && typeof result.skills === 'object') {
+            return result.skills;
+        }
+        console.error('スキルデータの取得に失敗しました');
+        return {};
     } catch (error) {
         console.error('スキルデータ取得エラー:', error);
+        return {};
     }
 }
 

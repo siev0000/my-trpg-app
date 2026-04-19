@@ -2320,21 +2320,6 @@ function loadGameDataBody(forceReload = false) {
 }
 
 function ensureGameDataItemsLoaded() {
-    if (gameDataSkillsLoaded) {
-        cachedSkills = [];
-        gameDataSkillsLoaded = false;
-        gameDataSkillsMtimeMs = 0;
-    }
-    if (gameDataClassesLoaded) {
-        cachedClasses = [];
-        gameDataClassesLoaded = false;
-        gameDataClassesMtimeMs = 0;
-    }
-    if (gameDataBodyLoaded) {
-        cachedBody = [];
-        gameDataBodyLoaded = false;
-        gameDataBodyMtimeMs = 0;
-    }
     if (!gameDataItemsLoaded) {
         loadGameDataItems(true);
         return;
@@ -2343,21 +2328,6 @@ function ensureGameDataItemsLoaded() {
 }
 
 function ensureGameDataSkillsLoaded() {
-    if (gameDataItemsLoaded) {
-        cachedItems = [];
-        gameDataItemsLoaded = false;
-        gameDataItemsMtimeMs = 0;
-    }
-    if (gameDataClassesLoaded) {
-        cachedClasses = [];
-        gameDataClassesLoaded = false;
-        gameDataClassesMtimeMs = 0;
-    }
-    if (gameDataBodyLoaded) {
-        cachedBody = [];
-        gameDataBodyLoaded = false;
-        gameDataBodyMtimeMs = 0;
-    }
     if (!gameDataSkillsLoaded) {
         loadGameDataSkills(true);
         return;
@@ -2366,21 +2336,6 @@ function ensureGameDataSkillsLoaded() {
 }
 
 function ensureGameDataClassesLoaded() {
-    if (gameDataItemsLoaded) {
-        cachedItems = [];
-        gameDataItemsLoaded = false;
-        gameDataItemsMtimeMs = 0;
-    }
-    if (gameDataSkillsLoaded) {
-        cachedSkills = [];
-        gameDataSkillsLoaded = false;
-        gameDataSkillsMtimeMs = 0;
-    }
-    if (gameDataBodyLoaded) {
-        cachedBody = [];
-        gameDataBodyLoaded = false;
-        gameDataBodyMtimeMs = 0;
-    }
     if (!gameDataClassesLoaded) {
         loadGameDataClasses(true);
         return;
@@ -2389,21 +2344,6 @@ function ensureGameDataClassesLoaded() {
 }
 
 function ensureGameDataBodyLoaded() {
-    if (gameDataItemsLoaded) {
-        cachedItems = [];
-        gameDataItemsLoaded = false;
-        gameDataItemsMtimeMs = 0;
-    }
-    if (gameDataSkillsLoaded) {
-        cachedSkills = [];
-        gameDataSkillsLoaded = false;
-        gameDataSkillsMtimeMs = 0;
-    }
-    if (gameDataClassesLoaded) {
-        cachedClasses = [];
-        gameDataClassesLoaded = false;
-        gameDataClassesMtimeMs = 0;
-    }
     if (!gameDataBodyLoaded) {
         loadGameDataBody(true);
         return;
@@ -3405,7 +3345,11 @@ router.post('/presence/heartbeat', async (req, res) => {
             selectedCharacterName
         });
         if (canUseMongoStateStore() && entry) {
-            await upsertPresenceMongo(useStoryScope ? 'story' : 'default', entry);
+            try {
+                await upsertPresenceMongo(useStoryScope ? 'story' : 'default', entry);
+            } catch (mongoError) {
+                console.warn('presence heartbeat mongo upsert failed:', mongoError?.message || mongoError);
+            }
         }
         return res.status(200).json({
             success: true,
