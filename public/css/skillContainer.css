@@ -778,7 +778,23 @@
 }
 
 #skill-ACTIVE.skill-table.is-type2 .skill-type2-metric-cell {
-  width: calc(var(--skill-type2-name-col) / 6);
+  width: calc(var(--skill-type2-name-col) / 5);
+}
+
+#skill-ACTIVE.skill-table.is-type2 {
+  --skill-type2-name-col: 42%;
+  --skill-type2-turn-col: 8%;
+  --skill-type2-desc-col: 50%;
+}
+
+#skill-ACTIVE.skill-table.is-type2 .skill-type2-turn-header,
+#skill-ACTIVE.skill-table.is-type2 .skill-type2-turn-cell {
+  width: var(--skill-type2-turn-col);
+  min-width: 64px;
+  text-align: center;
+  vertical-align: middle;
+  font-weight: 800;
+  color: #1f4a6b;
 }
 
 .skill-table .skill-active-remaining-cell {

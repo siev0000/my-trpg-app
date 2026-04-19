@@ -21,16 +21,35 @@ body {
     background: var(--bg);
     color: var(--text);
     font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+    overflow: hidden;
+}
+
+#gm-shell {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    z-index: 1;
+}
+
+#gm-stage {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 720px;
+    height: 1280px;
+    transform-origin: top left;
+    background: var(--bg);
+    overflow: hidden;
 }
 
 #gm-root {
-    width: min(1280px, 100%);
-    height: 100%;
-    margin: 0 auto;
-    padding: 14px;
+    width: 720px;
+    height: 1280px;
+    margin: 0;
+    padding: 1px;
     display: grid;
     grid-template-rows: auto 1fr 1.05fr;
-    gap: 12px;
+    gap: 1px;
 }
 
 .gm-header {
@@ -44,8 +63,19 @@ body {
     background: var(--panel-bg);
 }
 
+.gm-header-main {
+    min-width: 0;
+}
+
+.gm-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
 .gm-kicker {
-    margin: 0 0 4px;
+    margin: 0;
     color: #4c6d92;
     font-size: 0.74rem;
     font-weight: 700;
@@ -96,8 +126,9 @@ body {
 }
 
 .gm-storage-status {
-    margin-top: 6px;
+    margin-top: 0;
     margin-bottom: 0;
+    font-size: 0.78rem;
     font-weight: 700;
 }
 
@@ -121,15 +152,22 @@ body {
 }
 
 .gm-player-group {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     border: 1px solid #d3dfef;
     border-radius: 10px;
     background: #f8fbff;
-    padding: 10px;
+    padding: 8px;
 }
 
 .gm-player-heading {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
+}
+
+.gm-player-heading-text {
+    margin: 0;
+    color: #234b76;
+    font-size: 0.86rem;
+    font-weight: 700;
 }
 
 .gm-player-heading h3 {
@@ -216,6 +254,50 @@ body {
     font-size: 0.9rem;
 }
 
+.gm-detail-tab-header {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.gm-detail-tab-button {
+    padding: 5px 10px;
+    border: 1px solid #c1d4ea;
+    border-radius: 999px;
+    background: #f4f8ff;
+    color: #355274;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.gm-detail-tab-button:hover {
+    border-color: #8faed0;
+    background: #eaf2ff;
+}
+
+.gm-detail-tab-button.is-active {
+    border-color: #4f7eb5;
+    background: #dce9ff;
+    color: #1f4572;
+}
+
+.gm-detail-tab-panels {
+    width: 100%;
+}
+
+.gm-detail-tab-panel {
+    display: none;
+}
+
+.gm-detail-tab-panel.is-active {
+    display: block;
+}
+
+.gm-detail-tab-panel[hidden] {
+    display: none !important;
+}
+
 #gm-character-detail {
     display: grid;
     gap: 8px;
@@ -224,9 +306,16 @@ body {
     opacity: 1;
 }
 
+#gm-tab-character {
+    max-height: 520px;
+    min-height: 0;
+}
+
 #gm-tab-character .gm-scroll {
     min-height: 240px;
-    overflow-y: auto;
+    max-height: 520px;
+    overflow: hidden;
+    overflow-x: hidden;
 }
 
 .gm-detail-character-name {
@@ -248,6 +337,14 @@ body {
     border-radius: 8px;
     background: #f8fbff;
     padding: 8px 10px;
+    min-height: 0;
+}
+
+.gm-skill-table-scroll {
+    max-height: 410px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 6px;
 }
 
 .gm-story-skill-table {
@@ -303,6 +400,8 @@ body {
     color: #1d2f1d;
     font-weight: 700;
     text-align: center;
+    position: sticky;
+    z-index: 3;
 }
 
 .gm-story-skill-table td {
@@ -310,12 +409,25 @@ body {
 }
 
 .gm-story-skill-header-main th {
+    top: 0;
     font-size: 0.86rem;
     line-height: 1.25;
 }
 
 .gm-story-skill-header-sub th {
+    top: 32px;
+    z-index: 4;
     font-size: 0.78rem;
+}
+
+.gm-story-skill-header-turn {
+    width: 15%;
+    min-width: 70px;
+}
+
+.gm-story-skill-header-desc {
+    width: 50%;
+    min-width: 280px;
 }
 
 .gm-story-skill-name-cell {
@@ -326,6 +438,17 @@ body {
     line-height: 1.35;
     font-size: 0.95rem;
     position: relative;
+}
+
+.gm-story-skill-name-turn-cell {
+    width: 15%;
+    min-width: 70px;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: #214f73;
+    white-space: nowrap;
 }
 
 .gm-story-skill-name-inline ruby rt {
@@ -345,6 +468,7 @@ body {
 }
 
 .gm-story-skill-desc-cell {
+    width: 50%;
     padding: 6px 8px;
     vertical-align: top;
 }
@@ -454,7 +578,7 @@ body {
 
 .gm-log-excel-content {
     width: 100%;
-    min-height: 340px;
+    height: 475px;
     margin: 0 0 8px;
     padding: 8px 10px;
     border: 1px solid #c5d7ee;
@@ -462,7 +586,7 @@ body {
     background: #fcfeff;
     color: #233a56;
     font-family: Consolas, "Courier New", monospace;
-    font-size: 12px;
+    font-size: 16px;
     line-height: 1.35;
     white-space: pre;
     overflow: auto;

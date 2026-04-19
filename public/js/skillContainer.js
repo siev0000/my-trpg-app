@@ -6183,12 +6183,8 @@ function createSkillTableElement(type, isVisible = false) {
     const isActiveTable = type === "ACTIVE";
     const currentHeaders = isActiveTable ? ACTIVE_SKILL_TABLE_HEADERS : SKILL_TABLE_HEADERS;
     const currentSortKeys = isActiveTable ? ACTIVE_SKILL_TABLE_SORT_KEYS : SKILL_TABLE_SORT_KEYS;
-    const type2MetricHeaders = isActiveTable
-        ? ["威力", "守り", "状態", "R", "属性", "ターン"]
-        : ["威力", "守り", "状態", "R", "属性"];
-    const type2MetricSortKeys = isActiveTable
-        ? ACTIVE_SKILL_TABLE_TYPE2_SORT_KEYS
-        : SKILL_TABLE_TYPE2_SORT_KEYS;
+    const type2MetricHeaders = ["威力", "守り", "状態", "R", "属性"];
+    const type2MetricSortKeys = SKILL_TABLE_TYPE2_SORT_KEYS;
 
     const thead = document.createElement("thead");
     const tr = document.createElement("tr");
@@ -6207,10 +6203,17 @@ function createSkillTableElement(type, isVisible = false) {
     const trType2Main = document.createElement("tr");
     trType2Main.className = "skill-header-type2-main";
     const type2MainName = document.createElement("th");
-    type2MainName.colSpan = type2MetricHeaders.length;
+    type2MainName.colSpan = isActiveTable ? 4 : type2MetricHeaders.length;
     type2MainName.textContent = "技名";
     type2MainName.dataset.sortKey = "name";
     trType2Main.appendChild(type2MainName);
+    if (isActiveTable) {
+        const type2MainTurn = document.createElement("th");
+        type2MainTurn.className = "skill-type2-turn-header";
+        type2MainTurn.textContent = "ターン";
+        type2MainTurn.dataset.sortKey = "remaining";
+        trType2Main.appendChild(type2MainTurn);
+    }
     const type2MainDescription = document.createElement("th");
     type2MainDescription.colSpan = 3;
     type2MainDescription.rowSpan = 2;
@@ -6509,9 +6512,9 @@ function buildSkillTableRows({
         return [row];
     }
 
-    const nameCellColspan = tableType === "ACTIVE" ? 6 : 5;
-    const remainingMetricHtml = tableType === "ACTIVE"
-        ? `<td class="skill-type2-metric-cell skill-active-remaining-cell">${remainingText}</td>`
+    const nameCellColspan = tableType === "ACTIVE" ? 4 : 5;
+    const remainingNameHtml = tableType === "ACTIVE"
+        ? `<td class="skill-type2-turn-cell skill-active-remaining-cell">${remainingText}</td>`
         : "";
     const descriptionCellClass = cooldownText
         ? "skill-description-cell skill-description-cell-cooldown-overlay skill-cooldown-active"
@@ -6524,6 +6527,7 @@ function buildSkillTableRows({
             ${skillIconHtml}
             <span class="skill-name-inline">${nameHtml}</span>
         </td>
+        ${remainingNameHtml}
         <td class="skill-type2-desc-cell" colspan="3" rowspan="2">
             <div class="${descriptionCellClass}">${buildSkillDescriptionContentHtml(skill, { cooldownText })}</div>
         </td>
@@ -6537,7 +6541,6 @@ function buildSkillTableRows({
         <td class="skill-type2-metric-cell">${formatSkillMetricText(totalState)}</td>
         <td class="skill-type2-metric-cell">${formatSkillMetricText(rText)}</td>
         <td class="skill-type2-metric-cell skill-type2-attr-cell" data-attr-len="${attributeTextLength}">${attributeText}</td>
-        ${remainingMetricHtml}
     `;
 
     return [nameRow, valueRow];

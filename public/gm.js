@@ -1,6 +1,8 @@
 const GM_TOKEN_KEY = "gmToken";
 const POLL_INTERVAL_MS = 2500;
 const INFINITE_TURNS = 9999999;
+const STAGE_BASE_WIDTH = 720;
+const STAGE_BASE_HEIGHT = 1280;
 
 const gmLogoutButtonElement = document.getElementById("gm-logout-button");
 const gmStorageStatusElement = document.getElementById("gm-storage-status");
@@ -14,10 +16,13 @@ const gmLogFormatPanelElements = Array.from(document.querySelectorAll(".gm-log-f
 const gmCharacterDetailElement = document.getElementById("gm-character-detail");
 const gmTabButtonElements = Array.from(document.querySelectorAll(".gm-tab-button"));
 const gmTabPanelElements = Array.from(document.querySelectorAll(".gm-tab-content"));
+const gmStageElement = document.getElementById("gm-stage");
 
 let pollTimer = null;
+let stageResizeHandler = null;
 let activeTabId = "log";
 let activeLogFormat = "block";
+let activeCharacterSkillTab = "active";
 let selectedCharacterContext = { playerId: "", characterName: "" };
 let latestConnectedPlayers = [];
 let latestMongoStatus = { enabled: true, connected: false, dbName: "TRPG", message: "未確認" };
@@ -94,6 +99,26 @@ function formatSkillMetric(value) {
     const numeric = Math.round(toFiniteNumber(value, 0));
     if (numeric === 0) return "-";
     return String(numeric);
+}
+
+function updateStageScale() {
+    if (!gmStageElement) return;
+    const viewportWidth = window.innerWidth || STAGE_BASE_WIDTH;
+    const viewportHeight = window.innerHeight || STAGE_BASE_HEIGHT;
+    const widthScale = viewportWidth / STAGE_BASE_WIDTH;
+    const heightScale = viewportHeight / STAGE_BASE_HEIGHT;
+    const scale = Math.min(widthScale, heightScale);
+    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    const offsetX = Math.round((viewportWidth - STAGE_BASE_WIDTH * safeScale) / 2);
+    const offsetY = Math.round((viewportHeight - STAGE_BASE_HEIGHT * safeScale) / 2);
+    gmStageElement.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${safeScale})`;
+}
+
+function initializeStageScale() {
+    updateStageScale();
+    stageResizeHandler = () => updateStageScale();
+    window.addEventListener("resize", stageResizeHandler, { passive: true });
+    window.addEventListener("orientationchange", stageResizeHandler, { passive: true });
 }
 
 function renderMongoStatus(status = {}) {
@@ -473,24 +498,14 @@ function renderCharacterDetail(players = []) {
         characterName: getCharacterName(character)
     };
 
-    const characterNameHeading = document.createElement("h3");
-    characterNameHeading.className = "gm-detail-character-name";
-    characterNameHeading.textContent = getCharacterName(character) || "不明";
-    gmCharacterDetailElement.appendChild(characterNameHeading);
-
     const battleState = resolveBattleStateView(character);
 
-    const createSkillSection = (titleText, entries = [], mode = "active") => {
+    const createSkillSection = (entries = [], mode = "active") => {
         const section = document.createElement("section");
         section.className = "gm-skill-section";
         section.style.display = "block";
         section.style.visibility = "visible";
         section.style.opacity = "1";
-
-        const title = document.createElement("h3");
-        title.className = "gm-sub-title";
-        title.textContent = titleText;
-        section.appendChild(title);
 
         if (!Array.isArray(entries) || entries.length === 0) {
             const empty = document.createElement("p");
@@ -510,8 +525,9 @@ function renderCharacterDetail(players = []) {
         thead.style.display = "table-header-group";
         thead.innerHTML = `
             <tr class="gm-story-skill-header-main">
-                <th colspan="6">技名</th>
-                <th colspan="3" rowspan="2">説明</th>
+                <th colspan="4">技名</th>
+                <th class="gm-story-skill-header-turn">${mode === "active" ? "ターン" : "CT"}</th>
+                <th class="gm-story-skill-header-desc" rowspan="2">説明</th>
             </tr>
             <tr class="gm-story-skill-header-sub">
                 <th>威力</th>
@@ -519,7 +535,6 @@ function renderCharacterDetail(players = []) {
                 <th>状態</th>
                 <th>R</th>
                 <th>属性</th>
-                <th>${mode === "active" ? "ターン" : "CT"}</th>
             </tr>
         `;
         table.appendChild(thead);
@@ -553,10 +568,11 @@ function renderCharacterDetail(players = []) {
             nameRow.className = `gm-story-skill-name-row ${pairClass}`;
             nameRow.style.display = "table-row";
             nameRow.innerHTML = `
-                <td class="gm-story-skill-name-cell" colspan="6">
+                <td class="gm-story-skill-name-cell" colspan="4">
                     <span class="gm-story-skill-name-inline">${skillNameHtml}</span>
                 </td>
-                <td class="gm-story-skill-desc-cell" colspan="3" rowspan="2">
+                <td class="gm-story-skill-name-turn-cell">${escapeHtml(metricTurnText)}</td>
+                <td class="gm-story-skill-desc-cell" rowspan="2">
                     <div class="gm-story-skill-description${mode === "cooldown" ? " is-cooldown" : ""}">
                         <span class="gm-story-skill-description-text">${escapeHtml(detail)}</span>
                         ${mode === "cooldown"
@@ -583,7 +599,6 @@ function renderCharacterDetail(players = []) {
                 <td class="gm-story-skill-metric-cell">${escapeHtml(formatSkillMetric(entry?.state))}</td>
                 <td class="gm-story-skill-metric-cell">${escapeHtml(magicLevel || "-")}</td>
                 <td class="gm-story-skill-metric-cell">${escapeHtml(attribute)}</td>
-                <td class="gm-story-skill-metric-cell gm-story-skill-turn-cell">${escapeHtml(metricTurnText)}</td>
             `;
             valueRow.querySelectorAll("td").forEach((cell) => {
                 cell.style.display = "table-cell";
@@ -604,15 +619,83 @@ function renderCharacterDetail(players = []) {
             th.style.fontWeight = "700";
         });
         table.appendChild(tbody);
-        section.appendChild(table);
+        const tableScroll = document.createElement("div");
+        tableScroll.className = "gm-skill-table-scroll";
+        tableScroll.appendChild(table);
+        section.appendChild(tableScroll);
         return section;
     };
 
     const activeBuffs = pickSkillEntriesFromBattleState(battleState, "active");
-    gmCharacterDetailElement.appendChild(createSkillSection("発動中スキル", activeBuffs, "active"));
-
     const cooldowns = pickSkillEntriesFromBattleState(battleState, "cooldown");
-    gmCharacterDetailElement.appendChild(createSkillSection("クールタイム中スキル", cooldowns, "cooldown"));
+
+    const detailTabHeader = document.createElement("div");
+    detailTabHeader.className = "gm-detail-tab-header";
+    detailTabHeader.setAttribute("role", "tablist");
+    detailTabHeader.setAttribute("aria-label", "キャラ詳細スキル表示切替");
+
+    const activeTabButton = document.createElement("button");
+    activeTabButton.type = "button";
+    activeTabButton.className = "gm-detail-tab-button";
+    activeTabButton.textContent = "発動中スキル";
+    activeTabButton.dataset.gmDetailTab = "active";
+    activeTabButton.setAttribute("role", "tab");
+
+    const cooldownTabButton = document.createElement("button");
+    cooldownTabButton.type = "button";
+    cooldownTabButton.className = "gm-detail-tab-button";
+    cooldownTabButton.textContent = "クールタイム中スキル";
+    cooldownTabButton.dataset.gmDetailTab = "cooldown";
+    cooldownTabButton.setAttribute("role", "tab");
+
+    detailTabHeader.appendChild(activeTabButton);
+    detailTabHeader.appendChild(cooldownTabButton);
+
+    const detailPanels = document.createElement("div");
+    detailPanels.className = "gm-detail-tab-panels";
+
+    const activePanel = document.createElement("section");
+    activePanel.className = "gm-detail-tab-panel";
+    activePanel.dataset.gmDetailTabPanel = "active";
+    activePanel.setAttribute("role", "tabpanel");
+    activePanel.appendChild(createSkillSection(activeBuffs, "active"));
+
+    const cooldownPanel = document.createElement("section");
+    cooldownPanel.className = "gm-detail-tab-panel";
+    cooldownPanel.dataset.gmDetailTabPanel = "cooldown";
+    cooldownPanel.setAttribute("role", "tabpanel");
+    cooldownPanel.appendChild(createSkillSection(cooldowns, "cooldown"));
+
+    detailPanels.appendChild(activePanel);
+    detailPanels.appendChild(cooldownPanel);
+
+    gmCharacterDetailElement.appendChild(detailTabHeader);
+    gmCharacterDetailElement.appendChild(detailPanels);
+
+    const detailTabButtons = [activeTabButton, cooldownTabButton];
+    const detailTabPanels = [activePanel, cooldownPanel];
+    const applyDetailTabState = (tabId) => {
+        const nextTab = (tabId === "cooldown") ? "cooldown" : "active";
+        activeCharacterSkillTab = nextTab;
+        detailTabButtons.forEach((button) => {
+            const isActive = button.dataset.gmDetailTab === nextTab;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+        detailTabPanels.forEach((panel) => {
+            const isActive = panel.dataset.gmDetailTabPanel === nextTab;
+            panel.classList.toggle("is-active", isActive);
+            panel.hidden = !isActive;
+            if (!isActive) panel.setAttribute("hidden", "");
+            else panel.removeAttribute("hidden");
+        });
+    };
+    applyDetailTabState(activeCharacterSkillTab);
+    detailTabHeader.addEventListener("click", (event) => {
+        const target = event.target?.closest?.("[data-gm-detail-tab]");
+        if (!target) return;
+        applyDetailTabState(target.dataset.gmDetailTab);
+    });
 
     if (activeBuffs.length === 0 && cooldowns.length === 0) {
         gmLog("skill detail empty", {
@@ -663,14 +746,10 @@ function renderPresence(players = []) {
         const heading = document.createElement("div");
         heading.className = "gm-player-heading";
 
-        const title = document.createElement("h3");
-        title.textContent = `Player: ${playerId || "unknown"}`;
-        heading.appendChild(title);
-
-        const seenAt = document.createElement("p");
-        seenAt.className = "gm-player-seen-at";
-        seenAt.textContent = `最終更新: ${formatDisplayTime(player?.lastSeenAt)}`;
-        heading.appendChild(seenAt);
+        const headingText = document.createElement("p");
+        headingText.className = "gm-player-heading-text";
+        headingText.textContent = `${playerId || "unknown"}: ${formatDisplayTime(player?.lastSeenAt)}`;
+        heading.appendChild(headingText);
 
         playerGroup.appendChild(heading);
 
@@ -998,9 +1077,15 @@ gmLogoutButtonElement?.addEventListener("click", () => {
 });
 
 window.addEventListener("beforeunload", stopPolling);
+window.addEventListener("beforeunload", () => {
+    if (!stageResizeHandler) return;
+    window.removeEventListener("resize", stageResizeHandler);
+    window.removeEventListener("orientationchange", stageResizeHandler);
+});
 
 initializeTabs();
 initializeLogFormatTabs();
+initializeStageScale();
 
 if (!getGmToken()) {
     redirectToLogin();
