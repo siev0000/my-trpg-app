@@ -20,6 +20,7 @@ let activeTabId = "log";
 let activeLogFormat = "block";
 let selectedCharacterContext = { playerId: "", characterName: "" };
 let latestConnectedPlayers = [];
+let latestMongoStatus = { enabled: true, connected: false, dbName: "TRPG", message: "未確認" };
 let lastDashboardUpdatedAt = "";
 const GM_DEBUG_ENABLED = true;
 let lastDashboardLogSignature = "";
@@ -115,7 +116,9 @@ function renderMongoStatus(status = {}) {
         gmStorageStatusElement.classList.add("is-connected");
         return;
     }
-    gmStorageStatusElement.textContent = `Mongo接続: NG (${dbName})`;
+    gmStorageStatusElement.textContent = message
+        ? `Mongo接続: NG (${dbName}) ${message}`
+        : `Mongo接続: NG (${dbName})`;
     gmStorageStatusElement.classList.add("is-disconnected");
 }
 
@@ -911,15 +914,27 @@ async function fetchDashboard() {
             method: "GET",
             headers: { "x-gm-token": token }
         });
-        const data = await response.json();
+        const responseText = await response.text();
+        let data = null;
+        if (responseText) {
+            try {
+                data = JSON.parse(responseText);
+            } catch (parseError) {
+                throw new Error(`dashboard response parse failed (${response.status})`);
+            }
+        }
         if (!response.ok || !data?.success) {
             if (response.status === 401) {
                 logoutGm();
                 return;
             }
-            throw new Error(data?.message || `gm dashboard error: ${response.status}`);
+            const detailMessage = normalizeText(data?.details || data?.message) || `gm dashboard error: ${response.status}`;
+            throw new Error(detailMessage);
         }
-        renderMongoStatus(data?.mongoStatus || {});
+        if (data?.mongoStatus && typeof data.mongoStatus === "object") {
+            latestMongoStatus = { ...latestMongoStatus, ...data.mongoStatus };
+        }
+        renderMongoStatus(latestMongoStatus);
         if (normalizeText(data?.updatedAt)) {
             lastDashboardUpdatedAt = normalizeText(data.updatedAt);
         }
@@ -952,7 +967,13 @@ async function fetchDashboard() {
         }
     } catch (error) {
         console.warn("[gm] dashboard fetch failed:", error);
-        renderMongoStatus({ enabled: true, connected: false });
+        latestMongoStatus = {
+            ...latestMongoStatus,
+            connected: false,
+            dbName: normalizeText(latestMongoStatus?.dbName) || "TRPG",
+            message: normalizeText(error?.message) || "dashboard fetch failed"
+        };
+        renderMongoStatus(latestMongoStatus);
         if (gmPresenceMetaElement) {
             gmPresenceMetaElement.textContent = "更新失敗。再試行します。";
         }

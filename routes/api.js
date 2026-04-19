@@ -3467,7 +3467,16 @@ router.get('/gm/dashboard', async (req, res) => {
 
         const sinceMs = Date.parse(normalizeText(req.query?.since));
         const mongoStatus = await getMongoConnectionStatus();
-        const dashboardUpdatedAtMs = await getGmDashboardUpdatedAtMsAsync();
+        const useMongoForDashboard = Boolean(
+            canUseMongoStateStore()
+            && mongoStatus?.connected
+        );
+        const dashboardUpdatedAtMs = useMongoForDashboard
+            ? await getGmDashboardUpdatedAtMsAsync().catch((error) => {
+                console.warn('gm dashboard: failed to read mongo updatedAt, fallback to file cache', error?.message || error);
+                return getGmDashboardUpdatedAtMs();
+            })
+            : getGmDashboardUpdatedAtMs();
         const dashboardUpdatedAt = dashboardUpdatedAtMs > 0
             ? new Date(dashboardUpdatedAtMs).toISOString()
             : new Date().toISOString();
@@ -3480,16 +3489,24 @@ router.get('/gm/dashboard', async (req, res) => {
             });
         }
 
-        await ensureMongoPrimaryCache({ characters: true });
+        if (useMongoForDashboard) {
+            await ensureMongoPrimaryCache({ characters: true });
+        }
         ensureGameDataSkillsLoaded();
-        if (canUseMongoStateStore()) {
+        if (useMongoForDashboard) {
             await refreshPresenceMapFromMongo(storyConnectedPlayerMap, 'story');
         }
-        const selectDataLog = canUseMongoStateStore()
-            ? await readSelectDataLogSnapshotFromMongo()
+        const selectDataLog = useMongoForDashboard
+            ? await readSelectDataLogSnapshotFromMongo().catch((error) => {
+                console.warn('gm dashboard: select_dataLog mongo read failed, fallback to file cache', error?.message || error);
+                return readSelectDataLogSnapshot();
+            })
             : readSelectDataLogSnapshot();
-        const battleStateStore = canUseMongoStateStore()
-            ? await readBattleStateStoreFromMongo()
+        const battleStateStore = useMongoForDashboard
+            ? await readBattleStateStoreFromMongo().catch((error) => {
+                console.warn('gm dashboard: battleState mongo read failed, fallback to file cache', error?.message || error);
+                return readBattleStateStore();
+            })
             : readBattleStateStore();
         const connectedPlayers = getStoryConnectedPlayerList({
             includeBattleState: true,
@@ -3505,9 +3522,11 @@ router.get('/gm/dashboard', async (req, res) => {
         });
     } catch (error) {
         console.error('gm dashboard error:', error);
+        const details = normalizeText(error?.message) || 'unknown error';
         return res.status(500).json({
             success: false,
-            message: 'failed to load gm dashboard'
+            message: 'failed to load gm dashboard',
+            details
         });
     }
 });
