@@ -2,6 +2,7 @@
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 const { getAppDataRoot, getLogsDirPath, getMongoConfig } = require('../storage/config');
 const { withMongoClient } = require('../storage/mongo-client');
 
@@ -52,6 +53,7 @@ const APP_STATE_KEYS = {
 const MONGO_COLLECTION = {
     presence: 'Presence'
 };
+const MONGO_ITEM_COLLECTION_CANDIDATES = ['ItemList', 'Items', 'Item'];
 const SELECT_LOG_BUFFER_MAX = 50;
 const SELECT_LOG_FLUSH_BATCH_SIZE = 25;
 const SELECT_LOG_FLUSH_INTERVAL_MS = 5 * 60 * 1000;
@@ -59,6 +61,13 @@ const SELECT_LOG_IDLE_FLUSH_MS = 5 * 60 * 1000;
 const SELECT_LOG_EXPORT_THRESHOLD_BYTES = 5 * 1024 * 1024;
 const GAME_DATA_POLL_MS = 60 * 1000;
 const MONGO_STATUS_CACHE_TTL_MS = 10 * 1000;
+const LARGE_ITEM_JSON_STREAM_THRESHOLD_BYTES = 15 * 1024 * 1024;
+const isRenderRuntime = Boolean(
+    normalizeText(process.env.RENDER).toLowerCase() === 'true'
+    || normalizeText(process.env.RENDER_SERVICE_ID)
+    || normalizeText(process.env.RENDER_EXTERNAL_URL)
+);
+const useMongoItemsInRender = Boolean(useMongoPrimaryData && isRenderRuntime);
 
 fs.mkdirSync(logsDirPath, { recursive: true });
 console.log(`[storage] appDataRoot=${appDataRoot}`);
@@ -66,6 +75,8 @@ console.log(`[storage] logsDir=${logsDirPath}`);
 console.log(`[storage] useMongoDB=${mongoConfig.enabled ? 'true' : 'false'}`);
 console.log(`[storage] mongoPrimaryData=${useMongoPrimaryData ? 'true' : 'false'}`);
 console.log(`[storage] mongoDbName=${mongoConfig.dbName}`);
+console.log(`[storage] renderRuntime=${isRenderRuntime ? 'true' : 'false'}`);
+console.log(`[storage] mongoItemsOnRender=${useMongoItemsInRender ? 'true' : 'false'}`);
 
 const FIELD_KEYS = {
     name: ['名前'],
@@ -2201,6 +2212,12 @@ let gameDataItemsMtimeMs = 0;
 let gameDataSkillsMtimeMs = 0;
 let gameDataClassesMtimeMs = 0;
 let gameDataBodyMtimeMs = 0;
+let itemStreamCacheSourcePath = '';
+let itemStreamCacheSourceMtimeMs = 0;
+let itemStreamLookupCache = new Map();
+let itemStreamMissingCache = new Set();
+let mongoItemCollectionNameCache = '';
+let mongoItemCollectionCacheAtMs = 0;
 let mongoPrimaryReloadInProgress = false;
 let mongoPrimaryReloadPromise = null;
 let mongoPrimaryLastLoadedAtMs = 0;
@@ -2220,6 +2237,33 @@ function getFileMtimeMsSafe(targetPath = '') {
     } catch (error) {
         return 0;
     }
+}
+
+function getFileSizeSafe(targetPath = '') {
+    try {
+        const stat = fs.statSync(targetPath);
+        return Math.floor(Number(stat?.size) || 0);
+    } catch (error) {
+        return 0;
+    }
+}
+
+function compactRecordObject(source = {}) {
+    const record = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+    const compacted = {};
+    Object.entries(record).forEach(([key, value]) => {
+        const normalizedKey = normalizeText(key);
+        if (!normalizedKey) return;
+        if (value === undefined || value === null) return;
+        if (typeof value === 'string') {
+            const trimmed = value.trim();
+            if (!trimmed) return;
+            compacted[normalizedKey] = trimmed;
+            return;
+        }
+        compacted[normalizedKey] = value;
+    });
+    return compacted;
 }
 
 function readJsonArrayFile(filePath = '') {
@@ -2278,6 +2322,80 @@ function resolveGameDataItemsJsonPath() {
     return '';
 }
 
+function resetStreamItemCacheIfStale(sourcePath = '') {
+    const normalizedPath = normalizeText(sourcePath);
+    const mtimeMs = getFileMtimeMsSafe(normalizedPath);
+    if (
+        normalizedPath !== itemStreamCacheSourcePath
+        || mtimeMs !== itemStreamCacheSourceMtimeMs
+    ) {
+        itemStreamCacheSourcePath = normalizedPath;
+        itemStreamCacheSourceMtimeMs = mtimeMs;
+        itemStreamLookupCache = new Map();
+        itemStreamMissingCache = new Set();
+    }
+}
+
+async function findItemsByNameFromLargeJsonFile(sourcePath = '', itemNames = []) {
+    const normalizedPath = normalizeText(sourcePath);
+    const targetNames = (Array.isArray(itemNames) ? itemNames : [])
+        .map((name) => normalizeItemLookupName(name))
+        .filter(Boolean);
+    if (!normalizedPath || !targetNames.length || !fs.existsSync(normalizedPath)) {
+        return [];
+    }
+
+    resetStreamItemCacheIfStale(normalizedPath);
+
+    const unresolved = targetNames.filter((name) => (
+        !itemStreamLookupCache.has(name)
+        && !itemStreamMissingCache.has(name)
+    ));
+
+    if (unresolved.length > 0) {
+        const pending = new Set(unresolved);
+        const stream = fs.createReadStream(normalizedPath, { encoding: 'utf8' });
+        const rl = readline.createInterface({
+            input: stream,
+            crlfDelay: Infinity
+        });
+        try {
+            for await (const rawLine of rl) {
+                let line = String(rawLine || '').trim();
+                if (!line || line === '[' || line === ']') continue;
+                if (line.endsWith(',')) line = line.slice(0, -1).trim();
+                if (!line.startsWith('{') || !line.endsWith('}')) continue;
+                let row = null;
+                try {
+                    row = JSON.parse(line);
+                } catch (parseError) {
+                    continue;
+                }
+                const itemName = normalizeItemLookupName(pickFirstText(row, FIELD_KEYS.name));
+                if (!itemName || !pending.has(itemName)) continue;
+                itemStreamLookupCache.set(itemName, compactRecordObject(row));
+                pending.delete(itemName);
+                if (pending.size === 0) break;
+            }
+        } finally {
+            rl.close();
+            if (!stream.destroyed) {
+                stream.destroy();
+            }
+        }
+        pending.forEach((name) => itemStreamMissingCache.add(name));
+    }
+
+    const matched = [];
+    targetNames.forEach((name) => {
+        const row = itemStreamLookupCache.get(name);
+        if (row && typeof row === 'object') {
+            matched.push({ ...row });
+        }
+    });
+    return matched;
+}
+
 function loadGameDataItems(forceReload = false) {
     const itemsJsonPath = resolveGameDataItemsJsonPath();
     if (!itemsJsonPath) {
@@ -2294,7 +2412,7 @@ function loadGameDataItems(forceReload = false) {
     if (!forceReload && gameDataItemsLoaded && mtimeMs && mtimeMs === gameDataItemsMtimeMs) {
         return false;
     }
-    const rows = readJsonArrayFile(itemsJsonPath);
+    const rows = readJsonArrayFile(itemsJsonPath).map((row) => compactRecordObject(row));
     cachedItems = dedupeBy(
         rows,
         (row) => pickFirstText(row, FIELD_KEYS.name)
@@ -2413,6 +2531,87 @@ function normalizeMongoCharacterRow(row = {}) {
         normalized.名前 = normalizeMongoIdValue(source?._id);
     }
     return normalized;
+}
+
+function normalizeMongoItemRow(row = {}) {
+    const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+    const normalized = compactRecordObject({ ...source });
+    if (!pickFirstText(normalized, FIELD_KEYS.name)) {
+        normalized.名前 = normalizeMongoIdValue(source?._id);
+    }
+    return normalized;
+}
+
+function getNormalizedItemNameFromRow(row = {}) {
+    return normalizeItemLookupName(
+        pickFirstText(row, FIELD_KEYS.name)
+        || normalizeMongoIdValue(row?._id)
+    );
+}
+
+async function resolveMongoItemCollectionName(db) {
+    const nowMs = Date.now();
+    if (
+        mongoItemCollectionNameCache
+        && (nowMs - mongoItemCollectionCacheAtMs) < MONGO_PRIMARY_POLL_MS
+    ) {
+        return mongoItemCollectionNameCache;
+    }
+
+    const collections = await db.listCollections({}, { nameOnly: true }).toArray();
+    const existingNames = new Set(
+        (Array.isArray(collections) ? collections : [])
+            .map((entry) => normalizeText(entry?.name))
+            .filter(Boolean)
+    );
+    const resolved = MONGO_ITEM_COLLECTION_CANDIDATES.find((name) => existingNames.has(name)) || '';
+    mongoItemCollectionNameCache = resolved;
+    mongoItemCollectionCacheAtMs = nowMs;
+    return resolved;
+}
+
+async function findItemsByNameFromMongo(itemNames = []) {
+    if (!useMongoItemsInRender || !canUseMongoStateStore()) return [];
+    const normalizedNames = (Array.isArray(itemNames) ? itemNames : [])
+        .map((name) => normalizeItemLookupName(name))
+        .filter(Boolean);
+    if (!normalizedNames.length) return [];
+
+    try {
+        const rows = await withMongoClient(async ({ db }) => {
+            const collectionName = await resolveMongoItemCollectionName(db);
+            if (!collectionName) return [];
+            const query = {
+                $or: [
+                    { 名前: { $in: normalizedNames } },
+                    { name: { $in: normalizedNames } },
+                    { itemName: { $in: normalizedNames } }
+                ]
+            };
+            return db.collection(collectionName).find(query).toArray();
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        const map = new Map();
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            const normalized = normalizeMongoItemRow(row);
+            const key = getNormalizedItemNameFromRow(normalized);
+            if (!key || map.has(key)) return;
+            map.set(key, normalized);
+        });
+
+        const matchedItems = [];
+        normalizedNames.forEach((name) => {
+            const matched = map.get(name);
+            if (matched) matchedItems.push({ ...matched });
+        });
+        return matchedItems;
+    } catch (error) {
+        console.error('[mongo] item query failed:', error?.message || error);
+        return [];
+    }
 }
 
 function getNormalizedUserLoginId(user = {}) {
@@ -2839,7 +3038,6 @@ router.post('/body', (req, res) => {
 
 router.post('/items', async (req, res) => {
     try {
-        ensureGameDataItemsLoaded();
         const { itemList } = req.body;
         const itemsToMatch = (Array.isArray(itemList) ? itemList : [itemList])
             .map((itemName) => normalizeItemLookupName(itemName))
@@ -2848,6 +3046,28 @@ router.post('/items', async (req, res) => {
         if (!itemsToMatch.length) {
             return res.json({ success: true, itemData: [] });
         }
+
+        if (useMongoItemsInRender) {
+            const mongoStatus = await getMongoConnectionStatus().catch(() => null);
+            if (!mongoStatus?.connected) {
+                return res.status(503).json({
+                    success: false,
+                    message: 'mongodb is not connected for item lookup',
+                    mongoStatus
+                });
+            }
+            const matchedItems = await findItemsByNameFromMongo(itemsToMatch);
+            return res.json({ success: true, itemData: matchedItems });
+        }
+
+        const itemsJsonPath = resolveGameDataItemsJsonPath();
+        const itemFileSize = getFileSizeSafe(itemsJsonPath);
+        if (itemFileSize >= LARGE_ITEM_JSON_STREAM_THRESHOLD_BYTES) {
+            const matchedItems = await findItemsByNameFromLargeJsonFile(itemsJsonPath, itemsToMatch);
+            return res.json({ success: true, itemData: matchedItems });
+        }
+
+        ensureGameDataItemsLoaded();
 
         if (!cachedItems || !Array.isArray(cachedItems)) {
             console.error('cachedItems is invalid');

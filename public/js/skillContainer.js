@@ -1615,11 +1615,23 @@ async function fetchItem(itemList) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ itemList: itemList })
         });
-        const result = await response.json();
+        const raw = await response.text();
+        let result = null;
+        try {
+            result = raw ? JSON.parse(raw) : null;
+        } catch (parseError) {
+            console.error('アイテムデータ取得エラー: JSON解析失敗', parseError);
+            return [];
+        }
 
-        if (result.success) {
+        if (!response.ok) {
+            console.error('アイテムデータの取得に失敗しました:', result?.message || `HTTP ${response.status}`);
+            return [];
+        }
+
+        if (result?.success) {
             DebaglogSet("アイテムデータの取得 :", result.itemData)
-            return result.itemData
+            return Array.isArray(result.itemData) ? result.itemData : []
             // statusAll()
         } else {
             console.error('アイテムデータの取得に失敗しました');
@@ -2011,8 +2023,14 @@ async function fetchSkillsByName(skillList) {
             body: JSON.stringify({ skillNames: skillList }) // 和名リストを送信
         });
 
-        // レスポンスをJSON形式に変換
-        const result = await response.json();
+        const raw = await response.text();
+        let result = null;
+        try {
+            result = raw ? JSON.parse(raw) : null;
+        } catch (parseError) {
+            console.error('スキルデータ取得エラー: JSON解析失敗', parseError);
+            return [];
+        }
 
         if (response.ok && result.success) {
             // 成功時にスキルデータを返す
@@ -2136,18 +2154,32 @@ async function fetchMagics(skillList, magicEnhanceCount) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ skillNames: magicSkillslList })
         });
-        const result = await response.json();
+        const raw = await response.text();
+        let result = null;
+        try {
+            result = raw ? JSON.parse(raw) : null;
+        } catch (parseError) {
+            console.error('魔法データ取得エラー: JSON解析失敗', parseError);
+            return {};
+        }
 
-        if (result.success) {
+        if (!response.ok) {
+            console.error('魔法データの取得に失敗しました:', result?.message || `HTTP ${response.status}`);
+            return {};
+        }
+
+        if (result?.success) {
             DebaglogSet(" 取得魔法 ", result.skills)
-            magics = result.skills
+            magics = result.skills && typeof result.skills === 'object' ? result.skills : {}
 
-            return result.skills
+            return magics
         } else {
             console.error('魔法データの取得に失敗しました');
+            return {};
         }
     } catch (error) {
         console.error('魔法データ取得エラー:', error);
+        return {};
     }
 }
 // ---------------------
