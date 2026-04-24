@@ -2058,6 +2058,71 @@
     background-color: #edf6ff;
 }
 
+#levels-table.levels-table--magic-domain {
+    min-width: 100%;
+    table-layout: fixed;
+}
+
+#levels-table.levels-table--magic-domain .magic-domain-column {
+    width: 25%;
+    min-width: 25%;
+    max-width: 25%;
+    text-align: left;
+    vertical-align: top;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.35;
+    overflow: visible;
+    text-overflow: clip;
+    padding: 0.5vh 0.45vw;
+}
+
+#levels-table.levels-table--magic-domain .magic-domain-entry {
+    display: grid;
+    grid-template-columns: minmax(0, 85%) minmax(0, 15%);
+    align-items: start;
+    gap: 0.2vw;
+}
+
+#levels-table.levels-table--magic-domain .magic-domain-name {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#levels-table.levels-table--magic-domain .magic-domain-rank {
+    min-width: 0;
+    text-align: right;
+    font-weight: 700;
+    color: #1f4e7a;
+    white-space: nowrap;
+}
+
+#levels-table.levels-table--magic-domain thead th.magic-domain-column {
+    text-align: center;
+}
+
+#levels-table.levels-table--magic-domain tbody td.magic-domain-column {
+    background-color: #ffffff;
+}
+
+#levels-table.levels-table--magic-domain tbody tr:nth-child(even) td.magic-domain-column {
+    background-color: #f6f9fc;
+}
+
+#levels-table.levels-table--magic-domain tbody tr:hover td.magic-domain-column {
+    background-color: #edf6ff;
+}
+
+#levels-table.levels-table--magic-domain .magic-domain-empty {
+    text-align: center;
+    font-weight: 600;
+    color: #4b5563;
+    padding: 1.2vh 0.5vw;
+}
+
 #levels-table-wrap::-webkit-scrollbar {
     width: 10px;
     height: 10px;

@@ -225,6 +225,7 @@ async function displayBasicStatus(selectedCharacter) {
         ? selectedCharacter.acquiredClasses.filter((entry) => entry && entry.stats)
         : [];
     levelsTableState.rows = levelRows;
+    levelsTableState.magicDomain = buildMagicDomainTableStateFromCharacter(selectedCharacter);
     await renderLevelsTableByState();
     
     // 攻撃手段を変更
@@ -577,6 +578,13 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
     let allStatsBase = 0;
     const statRows = [];
 
+    const selectedMagicTalentStat = (() => {
+        if (containerId !== "talents-section") return "";
+        const magicTotal = Number(baseData["魔力系"] || 0) + Number(increaseData["魔力系"] || 0);
+        const faithTotal = Number(baseData["信仰系"] || 0) + Number(increaseData["信仰系"] || 0);
+        return magicTotal >= faithTotal ? "魔力系" : "信仰系";
+    })();
+
     Object.keys(baseData).forEach(stat => {
         const bodyValue = (bodyType && stat in bodyType) ? Number(bodyType[stat]) || 0 : 0;
         const baseValue = Number(baseData[stat] || 0) + bodyValue;
@@ -585,9 +593,13 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
         allStatsBase += baseValue;
 
         if (totalValue === 0 && !(containerId === "body-section" && stat === "飛行")) return;
+        if (containerId === "talents-section" && (stat === "魔力系" || stat === "信仰系") && stat !== selectedMagicTalentStat) {
+            return;
+        }
 
         let displayLabel = stat;
         let groupType = "";
+        let rankText = "";
 
         if (containerId === "body-section") {
             displayLabel = stat.replace("リーチ", "R");
@@ -608,13 +620,23 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
             }
         }
 
+        if (containerId === "talents-section" && stat === selectedMagicTalentStat) {
+            displayLabel = stat === "魔力系" ? "魔術系" : "信仰系";
+            // 使用可能判定に合わせ、Rankは基礎値で表示。
+            const rankValue = (baseValue > 0 ? 1 : 0) + (baseValue / 21);
+            rankText = Number.isFinite(rankValue)
+                ? Number(rankValue.toFixed(2)).toString()
+                : "0";
+        }
+
         statRows.push({
             stat,
             displayLabel,
             groupType,
             baseValue,
             increaseValue,
-            totalValue
+            totalValue,
+            rankText
         });
     });
 
@@ -641,11 +663,14 @@ function displayStats(containerId, baseData, increaseData, bodyType) {
 
         const valueMain = document.createElement("span");
         valueMain.className = "value-main";
-        valueMain.textContent = isTotalView ? row.totalValue : row.baseValue;
+        const isRankOnlyTalentRow = containerId === "talents-section" && Boolean(row.rankText);
+        valueMain.textContent = isRankOnlyTalentRow
+            ? `${row.rankText}`
+            : (isTotalView ? row.totalValue : row.baseValue);
         valueMain.id = `${containerId}-${row.stat}-value`;
         valueWrap.appendChild(valueMain);
 
-        const showInlineIncrease = !isTotalView && row.increaseValue !== 0;
+        const showInlineIncrease = !isRankOnlyTalentRow && !isTotalView && row.increaseValue !== 0;
         if (showInlineIncrease) {
             const increase = document.createElement("span");
             increase.className = "increase-inline";
@@ -1207,7 +1232,11 @@ const LEVEL_TABLE_STATUS_KEYS = [
 
 const levelsTableState = {
     view: "status",
-    rows: []
+    rows: [],
+    magicDomain: {
+        columns: [],
+        rows: []
+    }
 };
 
 function buildLevelTableKeysFromNameList(nameList = []) {
@@ -1249,6 +1278,139 @@ function getLevelSkillColumns(rows = []) {
         .map((num) => ({ label: `Lv${num}`, accessor: `Lv${num}` }));
 }
 
+function normalizeMagicTableText(value) {
+    return String(value ?? "").trim();
+}
+
+function getMagicSkillName(entry) {
+    if (!entry || typeof entry !== "object") return "";
+    return normalizeMagicTableText(entry?.和名 || entry?.name || entry?.技名);
+}
+
+function getMagicDisplayRankFromEntry(entry) {
+    const magicRank = Number(entry?.魔法Rank ?? 0);
+    if (Number.isFinite(magicRank) && magicRank > 0) {
+        return Math.max(0, Math.floor(magicRank));
+    }
+    return 0;
+}
+
+function getAcquiredMagicRankMapFromMagicSource(magicSource = {}) {
+    const rankMap = new Map();
+    const all = [
+        ...(Array.isArray(magicSource?.M) ? magicSource.M : []),
+        ...(Array.isArray(magicSource?.S) ? magicSource.S : []),
+        ...(Array.isArray(magicSource?.Q) ? magicSource.Q : []),
+        ...(Array.isArray(magicSource?.A) ? magicSource.A : [])
+    ];
+    all.forEach((entry) => {
+        const name = getMagicSkillName(entry);
+        if (!name) return;
+        const rank = getMagicDisplayRankFromEntry(entry);
+        const current = Number(rankMap.get(name) || 0);
+        if (rank > current) {
+            rankMap.set(name, rank);
+        }
+    });
+    return rankMap;
+}
+
+function buildMagicDomainTableStateFromCharacter(character = {}) {
+    const sourceCharacter = (character && typeof character === "object") ? character : {};
+    const magicSource = (sourceCharacter?.magic && typeof sourceCharacter.magic === "object")
+        ? sourceCharacter.magic
+        : {};
+    const magicMeta = (magicSource?.__meta && typeof magicSource.__meta === "object")
+        ? magicSource.__meta
+        : {};
+    const acquiredRankMap = getAcquiredMagicRankMapFromMagicSource(magicSource);
+
+    const acquiredNameSet = new Set([
+        ...(Array.isArray(magicSource?.M) ? magicSource.M : []),
+        ...(Array.isArray(magicSource?.S) ? magicSource.S : []),
+        ...(Array.isArray(magicSource?.Q) ? magicSource.Q : []),
+        ...(Array.isArray(magicSource?.A) ? magicSource.A : [])
+    ].map((entry) => getMagicSkillName(entry)).filter(Boolean));
+
+    const acquiredByDomainSource = Array.isArray(magicMeta?.acquiredMagicByDomain)
+        ? magicMeta.acquiredMagicByDomain
+        : [];
+    let columns = acquiredByDomainSource
+        .map((entry) => {
+            const attribute = normalizeMagicTableText(entry?.attribute);
+            const className = normalizeMagicTableText(entry?.className);
+            const fallbackAttribute = className.endsWith("の領域")
+                ? className.slice(0, -("の領域".length))
+                : className;
+            const magicList = Array.isArray(entry?.magicList)
+                ? entry.magicList
+                    .map((magicEntry) => {
+                        if (magicEntry && typeof magicEntry === "object") {
+                            const name = normalizeMagicTableText(magicEntry?.name);
+                            if (!name) return null;
+                            const rank = Math.max(0, Number(magicEntry?.rank || acquiredRankMap.get(name) || 0));
+                            return { name, rank };
+                        }
+                        const name = normalizeMagicTableText(magicEntry);
+                        if (!name) return null;
+                        return { name, rank: Math.max(0, Number(acquiredRankMap.get(name) || 0)) };
+                    })
+                    .filter(Boolean)
+                : [];
+            magicList.sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name, "ja"));
+            return {
+                attribute: attribute || fallbackAttribute || "領域",
+                className,
+                magicList
+            };
+        })
+        .filter((entry) => entry.attribute);
+
+    if (columns.length <= 0) {
+        const metaDomainList = Array.isArray(magicMeta?.magicListByDomain) ? magicMeta.magicListByDomain : [];
+        columns = metaDomainList
+            .map((entry) => {
+                const className = normalizeMagicTableText(entry?.className);
+                const attribute = className.endsWith("の領域")
+                    ? className.slice(0, -("の領域".length))
+                    : className;
+                const magicList = (Array.isArray(entry?.magicList) ? entry.magicList : [])
+                    .map((name) => normalizeMagicTableText(name))
+                    .filter((name) => acquiredNameSet.has(name));
+                const normalizedMagicList = magicList
+                    .map((name) => ({ name, rank: Math.max(0, Number(acquiredRankMap.get(name) || 0)) }))
+                    .sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name, "ja"));
+                return { attribute: attribute || className || "領域", className, magicList: normalizedMagicList };
+            })
+            .filter((entry) => entry.attribute);
+    }
+
+    if (columns.length <= 0 && acquiredNameSet.size > 0) {
+        const fallbackMagicList = [...acquiredNameSet]
+            .map((name) => ({ name, rank: Math.max(0, Number(acquiredRankMap.get(name) || 0)) }))
+            .sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name, "ja"));
+        columns = [{
+            attribute: "取得魔法",
+            className: "取得魔法",
+            magicList: fallbackMagicList
+        }];
+    }
+
+    const maxRows = Math.max(0, ...columns.map((column) => column.magicList.length));
+    const rows = Array.from({ length: maxRows }, (_, rowIndex) => (
+        columns.map((column) => {
+            const magicEntry = column.magicList[rowIndex];
+            if (!magicEntry || typeof magicEntry !== "object") return null;
+            const name = normalizeMagicTableText(magicEntry?.name);
+            if (!name) return null;
+            const rank = Math.max(0, Number(magicEntry?.rank || 0));
+            return { name, rank };
+        })
+    ));
+
+    return { columns, rows };
+}
+
 function resolveLevelTableKeys(view = "status", rows = []) {
     const resistanceNames = (typeof resistances !== "undefined" && Array.isArray(resistances)) ? resistances : [];
     const bodyNames = (typeof displayBody !== "undefined" && Array.isArray(displayBody))
@@ -1268,6 +1430,9 @@ function resolveLevelTableKeys(view = "status", rows = []) {
     if (view === "skill") {
         return getLevelSkillColumns(rows);
     }
+    if (view === "magic-domain") {
+        return [];
+    }
     return LEVEL_TABLE_STATUS_KEYS;
 }
 
@@ -1283,6 +1448,10 @@ async function renderLevelsTableByState() {
     const rows = Array.isArray(levelsTableState.rows) ? levelsTableState.rows : [];
     const keys = resolveLevelTableKeys(levelsTableState.view, rows);
     updateLevelsViewTabActive(levelsTableState.view);
+    if (levelsTableState.view === "magic-domain") {
+        await populateMagicDomainTable(levelsTableState.magicDomain);
+        return;
+    }
     await populateLevelsTable(rows, keys);
 }
 
@@ -1299,6 +1468,8 @@ async function changeLevelsTableView(view = "status", trigger = null) {
 async function populateLevelsTable(data, keys = displayKeys) {
     const table = document.querySelector("#levels-table");
     if (!table) return;
+    table.classList.remove("levels-table--magic-domain");
+    table.style.width = "";
     const tableBody = table.querySelector("tbody");
     const tableHead = table.querySelector("thead");
     if (!tableBody || !tableHead) return;
@@ -1378,6 +1549,78 @@ async function populateLevelsTable(data, keys = displayKeys) {
         });
 
         tableBody.appendChild(row);
+    });
+}
+
+async function populateMagicDomainTable(magicDomainState = {}) {
+    const table = document.querySelector("#levels-table");
+    if (!table) return;
+    const tableBody = table.querySelector("tbody");
+    const tableHead = table.querySelector("thead");
+    if (!tableBody || !tableHead) return;
+
+    const columns = Array.isArray(magicDomainState?.columns) ? magicDomainState.columns : [];
+    const rows = Array.isArray(magicDomainState?.rows) ? magicDomainState.rows : [];
+
+    table.classList.add("levels-table--magic-domain");
+    table.style.width = `${Math.max(100, columns.length * 25)}%`;
+    tableHead.innerHTML = "";
+    tableBody.innerHTML = "";
+
+    const headerRow = document.createElement("tr");
+    if (columns.length <= 0) {
+        const th = document.createElement("th");
+        th.textContent = "魔法領域";
+        headerRow.appendChild(th);
+    } else {
+        columns.forEach((column) => {
+            const th = document.createElement("th");
+            th.classList.add("magic-domain-column");
+            th.textContent = normalizeMagicTableText(column?.attribute) || "領域";
+            headerRow.appendChild(th);
+        });
+    }
+    tableHead.appendChild(headerRow);
+
+    if (columns.length <= 0 || rows.length <= 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.classList.add("magic-domain-empty");
+        td.colSpan = Math.max(1, columns.length);
+        td.textContent = "取得済み魔法がありません。";
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+        return;
+    }
+
+    rows.forEach((rowValues) => {
+        const tr = document.createElement("tr");
+        columns.forEach((_, columnIndex) => {
+            const td = document.createElement("td");
+            td.classList.add("magic-domain-column");
+            const magicEntry = rowValues?.[columnIndex];
+            if (!magicEntry || typeof magicEntry !== "object") {
+                td.textContent = "";
+            } else {
+                const wrapper = document.createElement("div");
+                wrapper.className = "magic-domain-entry";
+
+                const nameSpan = document.createElement("span");
+                nameSpan.className = "magic-domain-name";
+                nameSpan.textContent = normalizeMagicTableText(magicEntry?.name);
+
+                const rankSpan = document.createElement("span");
+                rankSpan.className = "magic-domain-rank";
+                const rankValue = Math.max(0, Number(magicEntry?.rank || 0));
+                rankSpan.textContent = rankValue > 0 ? `R${rankValue}` : "";
+
+                wrapper.appendChild(nameSpan);
+                wrapper.appendChild(rankSpan);
+                td.appendChild(wrapper);
+            }
+            tr.appendChild(td);
+        });
+        tableBody.appendChild(tr);
     });
 }
 

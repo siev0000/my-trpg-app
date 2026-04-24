@@ -5,10 +5,12 @@ const path = require('path');
 const readline = require('readline');
 const { getAppDataRoot, getLogsDirPath, getMongoConfig } = require('../storage/config');
 const { withMongoClient } = require('../storage/mongo-client');
+const { createMagicAcquireSupport } = require('./magic-acquire');
 
 const gameDataDirPath = path.join(process.cwd(), 'game-data');
 const gameDataSkillsJsonPath = path.join(gameDataDirPath, 'スキル.json');
 const gameDataClassesJsonPath = path.join(gameDataDirPath, '職業.json');
+const gameDataMagicAcquireConfigPath = path.join(gameDataDirPath, '魔法取得設定.js');
 const gameDataItemsJsonCandidates = [
     path.join(gameDataDirPath, '装備一覧.json'),
     path.join(gameDataDirPath, '装備.json'),
@@ -218,6 +220,11 @@ function pickFirstText(obj, keys, fallback = '') {
     const value = pickFirstValue(obj, keys, fallback);
     return normalizeText(value);
 }
+const magicAcquireSupport = createMagicAcquireSupport({
+    configPath: gameDataMagicAcquireConfigPath,
+    classNameFields: FIELD_KEYS.className,
+    skillNameFields: FIELD_KEYS.skillName
+});
 
 function readJsonFileAsIs(filePath, fallbackValue) {
     if (!fs.existsSync(filePath)) {
@@ -2227,6 +2234,7 @@ let mongoItemCollectionCacheAtMs = 0;
 let mongoPrimaryReloadInProgress = false;
 let mongoPrimaryReloadPromise = null;
 let mongoPrimaryLastLoadedAtMs = 0;
+let mongoPrimaryLoadedLogEmitted = false;
 let mongoStatusCache = {
     checkedAtMs: 0,
     enabled: false,
@@ -2733,10 +2741,13 @@ async function loadMongoPrimaryData(forceReload = false) {
             });
 
             mongoPrimaryLastLoadedAtMs = Date.now();
-            console.log(
-                `[mongo] primary loaded users=${loaded.users} characters=${loaded.characters}`
-                + ` itemCache=${loaded.itemCache} skillCache=${loaded.skillCache}`
-            );
+            if (!mongoPrimaryLoadedLogEmitted) {
+                console.log(
+                    `[mongo] primary loaded users=${loaded.users} characters=${loaded.characters}`
+                    + ` itemCache=${loaded.itemCache} skillCache=${loaded.skillCache}`
+                );
+                mongoPrimaryLoadedLogEmitted = true;
+            }
             return true;
         } catch (error) {
             console.error('[mongo] primary load failed:', error?.message || error);
@@ -2829,6 +2840,7 @@ function refreshLoadedGameDataCaches() {
     if (gameDataSkillsLoaded) loadGameDataSkills(false);
     if (gameDataClassesLoaded) loadGameDataClasses(false);
     if (gameDataBodyLoaded) loadGameDataBody(false);
+    magicAcquireSupport.refreshConfig(false);
 }
 
 setInterval(() => {
@@ -2985,24 +2997,144 @@ router.post('/getSkillByName', async (req, res) => {
 router.post('/magics', async (req, res) => {
     try {
         ensureGameDataSkillsLoaded();
+        ensureGameDataClassesLoaded();
+        magicAcquireSupport.ensureConfigLoaded();
         let { skillNames } = req.body;
         if (!Array.isArray(skillNames)) {
             skillNames = [skillNames];
         }
         const nameSet = new Set(skillNames.map((name) => normalizeText(name)).filter(Boolean));
+        let { passiveSkillNames } = req.body;
+        if (!Array.isArray(passiveSkillNames)) {
+            passiveSkillNames = [passiveSkillNames];
+        }
+        const passiveNameSet = new Set(passiveSkillNames.map((name) => normalizeText(name)).filter(Boolean));
+        const requestedSkillNameSet = new Set([...nameSet, ...passiveNameSet]);
         const sourceSkills = cachedSkills;
+        const magicAttributes = magicAcquireSupport.resolveMagicAttributes(req.body || {});
+        const { realmNames, magicListByDomain, magicList } = magicAcquireSupport.buildRealmMagicListByAttributes(cachedClasses, magicAttributes);
+        const realmSkillDomainIndexMap = magicAcquireSupport.buildRealmSkillDomainIndexMap(magicListByDomain);
+        const realmSkillAcquireOrderMap = magicAcquireSupport.buildRealmSkillAcquireOrderMap(magicListByDomain);
+        const domainRateBonusByIndex = magicAcquireSupport.buildDomainAcquireRateBonusByPSkills(
+            sourceSkills,
+            [...requestedSkillNameSet],
+            magicListByDomain
+        );
+        const pMagicBoostSkillNames = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => {
+                const skillName = pickFirstText(skill, FIELD_KEYS.skillName);
+                if (!skillName || !requestedSkillNameSet.has(skillName)) return false;
+                const skillType = pickFirstText(skill, FIELD_KEYS.skillType);
+                return skillType === 'P' && skillName.includes('魔法強化');
+            })
+            .map((skill) => pickFirstText(skill, FIELD_KEYS.skillName))
+            .filter(Boolean);
+        const domainRateBonusSummary = Array.from(domainRateBonusByIndex.entries())
+            .map(([domainIndex, bonusRate]) => ({
+                domainIndex,
+                realmName: normalizeText(magicListByDomain?.[domainIndex]?.className),
+                bonusRate: toFiniteNumber(bonusRate, 0)
+            }))
+            .sort((a, b) => (a.domainIndex - b.domainIndex));
+        if (pMagicBoostSkillNames.length > 0 || domainRateBonusSummary.length > 0) {
+            console.log('[magic acquire bonus]', {
+                pMagicBoostSkillNames,
+                domainRateBonusSummary
+            });
+        }
+        const realmMagicNameSet = new Set((Array.isArray(magicList) ? magicList : []).map((name) => normalizeText(name)).filter(Boolean));
+        const magicSystemJudge = magicAcquireSupport.getMagicSystemJudge(req.body || {});
+        const domainAcquireRateSummary = magicAcquireSupport.buildDomainAcquireRateSummary(
+            magicSystemJudge,
+            magicListByDomain,
+            domainRateBonusByIndex
+        );
 
-        const matchedSkills = (Array.isArray(sourceSkills) ? sourceSkills : [])
-            .filter((skill) => nameSet.has(pickFirstText(skill, FIELD_KEYS.skillName)))
-            .reduce((grouped, skill) => {
+        const matchedSkillsByName = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => {
+                const skillName = pickFirstText(skill, FIELD_KEYS.skillName);
+                if (!nameSet.has(skillName)) return false;
+                const skillType = pickFirstText(skill, FIELD_KEYS.skillType);
+                // 魔法強化取得で追加されるQ系は領域/魔法Lv判定の対象外で常に候補に残す
+                if (skillType === 'Q') return true;
+                return magicAcquireSupport.canUseRealmMagicSkill(skill, magicSystemJudge, realmMagicNameSet, skillName);
+            });
+        const matchedSkillsBySystem = (Array.isArray(sourceSkills) ? sourceSkills : [])
+            .filter((skill) => {
+                const skillName = pickFirstText(skill, FIELD_KEYS.skillName);
+                return magicAcquireSupport.canUseRealmMagicSkill(skill, magicSystemJudge, realmMagicNameSet, skillName);
+            });
+        const mergedMatchedSkills = dedupeBy(
+            [...matchedSkillsByName, ...matchedSkillsBySystem],
+            (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
+        );
+        const acquiredSkills = magicAcquireSupport.applyAcquireRateToSkills(
+            mergedMatchedSkills,
+            magicSystemJudge,
+            realmSkillDomainIndexMap,
+            {
+                domainRateBonusByIndex,
+                skillAcquireOrderMap: realmSkillAcquireOrderMap
+            }
+        );
+        const hasMagicLimitBreak = acquiredSkills.some((skill) => (
+            pickFirstText(skill, FIELD_KEYS.skillName) === '魔法限界突破'
+        ));
+        const firstDomainMagicList = Array.isArray(magicListByDomain?.[0]?.magicList)
+            ? magicListByDomain[0].magicList
+            : [];
+        const acquiredSkillNameSet = new Set(
+            acquiredSkills.map((skill) => pickFirstText(skill, FIELD_KEYS.skillName)).filter(Boolean)
+        );
+        const bonusSkill = hasMagicLimitBreak
+            ? magicAcquireSupport.pickLimitBreakBonusSkill(
+                sourceSkills,
+                magicSystemJudge,
+                firstDomainMagicList,
+                acquiredSkillNameSet
+            )
+            : null;
+        const finalAcquiredSkills = bonusSkill
+            ? dedupeBy(
+                [...acquiredSkills, bonusSkill],
+                (skill) => pickFirstText(skill, FIELD_KEYS.skillName)
+            )
+            : acquiredSkills;
+        const groupedSkills = finalAcquiredSkills.reduce((grouped, skill) => {
                 const type = pickFirstText(skill, FIELD_KEYS.skillType);
                 if (!type) return grouped;
                 if (!grouped[type]) grouped[type] = [];
                 grouped[type].push(skill);
                 return grouped;
             }, {});
+        Object.keys(groupedSkills).forEach((type) => {
+            groupedSkills[type].sort((a, b) => {
+                const levelA = toFiniteNumber(pickFirstValue(a, ['魔法Lv'], 0), 0);
+                const levelB = toFiniteNumber(pickFirstValue(b, ['魔法Lv'], 0), 0);
+                if (levelB !== levelA) return levelB - levelA;
 
-        return res.json({ success: true, skills: matchedSkills });
+                const rankA = toFiniteNumber(magicAcquireSupport.getSkillRequiredMagicRank(a), 0);
+                const rankB = toFiniteNumber(magicAcquireSupport.getSkillRequiredMagicRank(b), 0);
+                if (rankB !== rankA) return rankB - rankA;
+
+                const nameA = pickFirstText(a, FIELD_KEYS.skillName);
+                const nameB = pickFirstText(b, FIELD_KEYS.skillName);
+                return nameA.localeCompare(nameB, 'ja');
+            });
+        });
+
+        return res.json({
+            success: true,
+            skills: groupedSkills,
+            magicAttributes,
+            realmNames,
+            magicListByDomain,
+            magicList,
+            magicSystemJudge,
+            pMagicBoostSkillNames,
+            domainRateBonusSummary,
+            domainAcquireRateSummary
+        });
     } catch (error) {
         console.error('magics fetch error:', error);
         return res.status(500).json({ success: false, message: 'failed to fetch magics' });

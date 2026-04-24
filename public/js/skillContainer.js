@@ -279,8 +279,10 @@ const displaySum = ["攻撃", "防御", "魔力", "魔防", "速度", "命中", 
 const talents = [
     "威圧", "透明化", "隠密", "消音", "看破", "知覚", "聴覚", "追跡", "軽業", "鑑定", "騎乗",
     "芸能", "言語学", "交渉", "呪文学", "職能", "真意看破", "水泳", "製作", "生存", "装置", 
-    "精神接続", "知識", "治療", "早業", "登攀", "指揮", "騙す", "変装", "魔道具操作"
+    "精神接続", "知識", "治療", "早業", "登攀", "指揮", "騙す", "変装", "魔道具操作",
+    "魔力系", "信仰系"
 ];
+const CLASS_LV_SCALED_TALENTS = new Set(["魔力系", "信仰系"]);
 const resistances = [
     "物理軽減", "魔法軽減", "遠隔軽減", "切断軽減", "貫通軽減", 
     "打撃軽減", "炎軽減", "氷軽減", "雷軽減", "酸軽減", 
@@ -1499,7 +1501,29 @@ async function acquireCharacterData(character) {
     DebaglogSet("magicEnhanceCount :", magicEnhanceCount)
     // DebaglogSet("statusCharacter.取得魔法 :", character.取得魔法.split(','))
 
-    returnCharacterData.magic = await fetchMagics(splitCsvList(character?.取得魔法), magicEnhanceCount)
+    const magicPowerValue = toFiniteNumber(returnCharacterData?.stats?.skillValues?.["魔力系"]);
+    const faithPowerValue = toFiniteNumber(returnCharacterData?.stats?.skillValues?.["信仰系"]);
+    const passiveSkillNames = Array.isArray(returnCharacterData?.skills?.P)
+        ? returnCharacterData.skills.P
+            .map((skill) => String(skill?.和名 || skill?.name || "").trim())
+            .filter(Boolean)
+        : [];
+    const magicAttributes = Array.from(new Set(
+        ["属性1", "属性2", "属性3", "属性4", "属性5", "属性6", "属性7"]
+            .map((key) => String(character?.[key] ?? "").trim())
+            .filter(Boolean)
+    ));
+    returnCharacterData.magic = await fetchMagics(
+        splitCsvList(character?.取得魔法),
+        magicEnhanceCount,
+        { magicPowerValue, faithPowerValue, magicAttributes, passiveSkillNames, characterName: returnCharacterData.name }
+    )
+    const characterMagicLog = buildStoryMagicLogSummary(returnCharacterData.magic);
+    DebaglogSet("[Story][キャラ魔法設定]", {
+        name: returnCharacterData.name,
+        M: characterMagicLog.mNames,
+        MS: characterMagicLog.msNames
+    });
 
 
 
@@ -1838,7 +1862,10 @@ async function statusAll(acquiredClasses, initialClasses) {
             // タレントも同様に計算
             talents.forEach(talent => {
                 if (classStats[talent] !== undefined) {
-                    const adjustedTalentValue = (parseInt(classStats[talent], 10) / 10) * classLv || 0;
+                    const talentBaseValue = parseInt(classStats[talent], 10) || 0;
+                    const adjustedTalentValue = CLASS_LV_SCALED_TALENTS.has(talent)
+                        ? (talentBaseValue * classLv)
+                        : ((talentBaseValue / 10) * classLv);
                     returnStats.skillValues[talent] += adjustedTalentValue; // 合計を更新
                     // DebaglogSet(`Talent [${talent}] adjusted by:`, adjustedTalentValue, "New total:", returnStats.skillValues[talent]);
                 }
@@ -2142,7 +2169,98 @@ function addArrayToArray(targetArray, arrayToAdd) {
     return targetArray;
 }
 
-async function fetchMagics(skillList, magicEnhanceCount) {
+function getSkillNameForStoryMagicLog(skill) {
+    if (!skill || typeof skill !== "object") return "";
+    return String(skill.和名 || skill.name || "").trim();
+}
+
+function normalizeMagicSkillGroupForStory(rawMagics) {
+    const source = (rawMagics && typeof rawMagics === "object") ? rawMagics : {};
+    const normalizeGroup = (key) => {
+        const list = source[key];
+        return Array.isArray(list) ? list.filter((entry) => entry && typeof entry === "object") : [];
+    };
+
+    return {
+        M: normalizeGroup("M"),
+        S: normalizeGroup("S"),
+        Q: normalizeGroup("Q"),
+        A: normalizeGroup("A")
+    };
+}
+
+function buildStoryMagicLogSummary(magics) {
+    const normalized = normalizeMagicSkillGroupForStory(magics);
+    const mNames = normalized.M.map(getSkillNameForStoryMagicLog).filter(Boolean);
+    // Story 表示では S が MS テーブルに流れる。
+    const msNames = normalized.S.map(getSkillNameForStoryMagicLog).filter(Boolean);
+    return {
+        normalized,
+        mNames,
+        msNames
+    };
+}
+
+function normalizeMagicDomainMetaList(rawList = []) {
+    return (Array.isArray(rawList) ? rawList : [])
+        .map((entry) => {
+            const className = String(entry?.className || "").trim();
+            const magicList = Array.isArray(entry?.magicList)
+                ? entry.magicList.map((name) => String(name || "").trim()).filter(Boolean)
+                : [];
+            return { className, magicList };
+        })
+        .filter((entry) => entry.className);
+}
+
+function resolveMagicDisplayRank(skillEntry = {}) {
+    const magicRank = toFiniteNumber(skillEntry?.魔法Rank);
+    if (magicRank > 0) {
+        return Math.max(0, Math.floor(magicRank));
+    }
+    return 0;
+}
+
+function extractAcquiredMagicInfoMap(normalizedMagicGroups = {}) {
+    const all = [
+        ...(Array.isArray(normalizedMagicGroups?.M) ? normalizedMagicGroups.M : []),
+        ...(Array.isArray(normalizedMagicGroups?.S) ? normalizedMagicGroups.S : []),
+        ...(Array.isArray(normalizedMagicGroups?.Q) ? normalizedMagicGroups.Q : []),
+        ...(Array.isArray(normalizedMagicGroups?.A) ? normalizedMagicGroups.A : [])
+    ];
+    const infoMap = new Map();
+    all.forEach((entry) => {
+        const name = getSkillNameForStoryMagicLog(entry);
+        if (!name) return;
+        const rank = resolveMagicDisplayRank(entry);
+        const current = infoMap.get(name);
+        if (!current || rank > current.rank) {
+            infoMap.set(name, { name, rank });
+        }
+    });
+    return infoMap;
+}
+
+function buildAcquiredMagicByDomain(domainList = [], acquiredMagicInfoMap = new Map()) {
+    return normalizeMagicDomainMetaList(domainList).map((entry) => {
+        const className = String(entry?.className || "").trim();
+        const attribute = className.endsWith("の領域")
+            ? className.slice(0, -("の領域".length))
+            : className;
+        const magicList = (Array.isArray(entry?.magicList) ? entry.magicList : [])
+            .map((name) => {
+                const normalizedName = String(name || "").trim();
+                const info = acquiredMagicInfoMap.get(normalizedName);
+                if (!normalizedName || !info) return null;
+                return { name: normalizedName, rank: Math.max(0, toFiniteNumber(info.rank)) };
+            })
+            .filter(Boolean)
+            .sort((a, b) => (b.rank - a.rank) || a.name.localeCompare(b.name, "ja"));
+        return { className, attribute, magicList };
+    });
+}
+
+async function fetchMagics(skillList, magicEnhanceCount, options = {}) {
     function getMagicSkills(skillLevel) {
         // skillLevelが`skills.魔法強化取得の数 として渡されると仮定
         return magicskill.slice(0, skillLevel);
@@ -2150,11 +2268,30 @@ async function fetchMagics(skillList, magicEnhanceCount) {
 
     const selectedSkills = getMagicSkills(magicEnhanceCount);
     const magicSkillslList = addArrayToArray(skillList, selectedSkills);
+    const magicPowerValue = toFiniteNumber(options?.magicPowerValue);
+    const faithPowerValue = toFiniteNumber(options?.faithPowerValue);
+    const maxMagicSystemValue = Math.max(magicPowerValue, faithPowerValue);
+    const maxMagicLevel = (maxMagicSystemValue > 0 ? 1 : 0) + (maxMagicSystemValue / 21);
+    const magicAttributes = Array.isArray(options?.magicAttributes)
+        ? options.magicAttributes
+        : [];
+    const passiveSkillNames = Array.isArray(options?.passiveSkillNames)
+        ? options.passiveSkillNames.map((name) => String(name || "").trim()).filter(Boolean)
+        : [];
+    const characterName = String(options?.characterName || "").trim();
     try {
         const response = await fetch('/api/magics', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ skillNames: magicSkillslList })
+            body: JSON.stringify({
+                skillNames: magicSkillslList,
+                passiveSkillNames,
+                magicPowerValue,
+                faithPowerValue,
+                maxMagicLevel,
+                magicAttributes,
+                magicSystemValue: maxMagicSystemValue
+            })
         });
         const raw = await response.text();
         let result = null;
@@ -2171,8 +2308,74 @@ async function fetchMagics(skillList, magicEnhanceCount) {
         }
 
         if (result?.success) {
-            DebaglogSet(" 取得魔法 ", result.skills)
-            magics = result.skills && typeof result.skills === 'object' ? result.skills : {}
+            const storyMagicLog = buildStoryMagicLogSummary(result.skills);
+            const normalizedDomainList = normalizeMagicDomainMetaList(result?.magicListByDomain);
+            const acquiredMagicInfoMap = extractAcquiredMagicInfoMap(storyMagicLog.normalized);
+            const acquiredMagicByDomain = buildAcquiredMagicByDomain(normalizedDomainList, acquiredMagicInfoMap);
+            DebaglogSet(" 取得魔法 ", storyMagicLog.normalized);
+            console.log("[職業領域→魔法リスト]", result?.magicListByDomain || result?.magicList || []);
+            console.log("[魔法系統判定]", result?.magicSystemJudge || {});
+            console.log("[魔法属性判定]", { attributes: result?.magicAttributes || magicAttributes, realms: result?.realmNames || [] });
+            console.log("[魔法取得率補正]", {
+                pMagicBoostSkills: Array.isArray(result?.pMagicBoostSkillNames) ? result.pMagicBoostSkillNames : [],
+                domainRateBonus: Array.isArray(result?.domainRateBonusSummary) ? result.domainRateBonusSummary : []
+            });
+            const domainAcquireRateSummary = Array.isArray(result?.domainAcquireRateSummary)
+                ? result.domainAcquireRateSummary
+                : [];
+            const domainAcquireRowsForLog = domainAcquireRateSummary.map((entry) => ({
+                characterName,
+                domainIndex: Number(entry?.domainIndex ?? -1),
+                attribute: String(entry?.attributeName || "").trim(),
+                realmName: String(entry?.className || "").trim(),
+                effectivePercent: Number(entry?.effectiveRatePercent || 0),
+                basePercent: Number(entry?.baseRatePercent || 0),
+                progressedBasePercent: Number(entry?.progressedBaseRatePercent || 0),
+                bonusPercent: Number(entry?.bonusRatePercent || 0),
+                progressPercent: Math.round(Number(entry?.currentRankProgress || 0) * 100)
+            }));
+            console.log("[魔法取得率詳細]", {
+                characterName,
+                attributes: result?.magicAttributes || magicAttributes,
+                maxRank: result?.magicSystemJudge?.maxMagicLevel ?? null,
+                domains: domainAcquireRowsForLog
+            });
+            console.table(domainAcquireRowsForLog);
+            const acquiredMagicRowsForLog = acquiredMagicByDomain.map((entry, index) => {
+                const magicNamesWithRank = (Array.isArray(entry?.magicList) ? entry.magicList : [])
+                    .map((magic) => `${String(magic?.name || "").trim()}R${Math.max(0, toFiniteNumber(magic?.rank))}`)
+                    .filter(Boolean);
+                return {
+                    characterName,
+                    domainIndex: index,
+                    attribute: String(entry?.attribute || "").trim(),
+                    realmName: String(entry?.className || "").trim(),
+                    magicCount: magicNamesWithRank.length,
+                    magics: magicNamesWithRank.join(", ")
+                };
+            });
+            console.log("[属性別最終取得魔法]", {
+                characterName,
+                domains: acquiredMagicRowsForLog
+            });
+            console.table(acquiredMagicRowsForLog);
+            DebaglogSet("[Story][取得魔法一覧][M]", storyMagicLog.mNames);
+            DebaglogSet("[Story][取得魔法一覧][MS]", storyMagicLog.msNames);
+            console.log("[Story][取得魔法一覧][M]", storyMagicLog.mNames);
+            console.log("[Story][取得魔法一覧][MS]", storyMagicLog.msNames);
+            magics = {
+                ...storyMagicLog.normalized,
+                __meta: {
+                    magicAttributes: Array.isArray(result?.magicAttributes)
+                        ? result.magicAttributes.map((value) => String(value || "").trim()).filter(Boolean)
+                        : (Array.isArray(magicAttributes) ? magicAttributes.map((value) => String(value || "").trim()).filter(Boolean) : []),
+                    realmNames: Array.isArray(result?.realmNames)
+                        ? result.realmNames.map((value) => String(value || "").trim()).filter(Boolean)
+                        : [],
+                    magicListByDomain: normalizedDomainList,
+                    acquiredMagicByDomain
+                }
+            };
 
             return magics
         } else {

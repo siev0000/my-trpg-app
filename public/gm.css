@@ -256,6 +256,7 @@ body {
 
 .gm-detail-tab-header {
     display: flex;
+    height: 25px;
     gap: 8px;
     margin-bottom: 4px;
 }
@@ -269,6 +270,7 @@ body {
     font-size: 0.8rem;
     font-weight: 700;
     cursor: pointer;
+    height: 20px;
 }
 
 .gm-detail-tab-button:hover {
