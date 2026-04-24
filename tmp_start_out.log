@@ -1,6 +1,0 @@
-[storage] appDataRoot=C:\Users\skkt3\ドキュメント\Github\my-trpg-app
-[storage] logsDir=C:\Users\skkt3\ドキュメント\Github\my-trpg-app\logs
-[storage] useMongoDB=true
-[storage] mongoPrimaryData=true
-[storage] mongoDbName=TRPG
-Server is running on http://localhost:3199
