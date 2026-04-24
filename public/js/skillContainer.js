@@ -568,6 +568,94 @@ function getCurrentCharacterForItemActions() {
     return null;
 }
 
+const CHARACTER_ITEM_SAVE_DEBOUNCE_MS = 180;
+let characterItemSaveTimerId = null;
+let characterItemSaveInFlight = false;
+const pendingCharacterItemSavePayloadByName = new Map();
+
+function getItemNameForPersist(value) {
+    if (typeof value === "string") return String(value || "").trim();
+    if (!value || typeof value !== "object") return "";
+    return String(value?.名前 || value?.name || "").trim();
+}
+
+function buildCharacterItemStatePayload(character) {
+    if (!character || typeof character !== "object") return null;
+    normalizeCharacterItemState(character);
+    const characterName = String(character?.name || "").trim();
+    if (!characterName) return null;
+
+    const equipmentSlotPayload = {};
+    equipmentSlots.forEach((slot) => {
+        equipmentSlotPayload[slot] = getItemNameForPersist(character?.equipmentSlot?.[slot]);
+    });
+
+    const inventoryPayload = (Array.isArray(character?.inventory) ? character.inventory : [])
+        .map((item) => getItemNameForPersist(item))
+        .filter(Boolean);
+    const storagePayload = (Array.isArray(character?.storage) ? character.storage : [])
+        .map((item) => getItemNameForPersist(item))
+        .filter(Boolean);
+
+    return {
+        characterName,
+        equipmentSlot: equipmentSlotPayload,
+        inventory: inventoryPayload,
+        storage: storagePayload
+    };
+}
+
+async function saveCharacterItemStateToApi(payload = null) {
+    if (!payload || typeof payload !== "object") return;
+    const response = await fetch("/api/character/items/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+        throw new Error(`character items save failed: ${response.status}`);
+    }
+    const result = await response.json();
+    if (!result?.success) {
+        throw new Error(result?.message || "character items save failed");
+    }
+}
+
+async function flushCharacterItemStateSaveQueue() {
+    if (characterItemSaveInFlight) return;
+    characterItemSaveInFlight = true;
+    try {
+        while (pendingCharacterItemSavePayloadByName.size > 0) {
+            const payloads = Array.from(pendingCharacterItemSavePayloadByName.values());
+            pendingCharacterItemSavePayloadByName.clear();
+            for (const payload of payloads) {
+                try {
+                    await saveCharacterItemStateToApi(payload);
+                } catch (error) {
+                    DebaglogSet("character item save failed:", payload?.characterName, error);
+                }
+            }
+        }
+    } finally {
+        characterItemSaveInFlight = false;
+    }
+}
+
+function queueCharacterItemStateSave(character) {
+    const payload = buildCharacterItemStatePayload(character);
+    if (!payload) return;
+    pendingCharacterItemSavePayloadByName.set(payload.characterName, payload);
+    if (characterItemSaveTimerId) {
+        window.clearTimeout(characterItemSaveTimerId);
+    }
+    characterItemSaveTimerId = window.setTimeout(() => {
+        characterItemSaveTimerId = null;
+        flushCharacterItemStateSaveQueue().catch((error) => {
+            DebaglogSet("character item save queue failed:", error);
+        });
+    }, CHARACTER_ITEM_SAVE_DEBOUNCE_MS);
+}
+
 function getEquipSlotItemName(character, slot) {
     const item = character?.equipmentSlot?.[slot];
     const name = String(item?.名前 || item?.name || "").trim();
@@ -949,6 +1037,7 @@ window.refreshTopRightStatusContainer = refreshTopRightStatusContainer;
 async function refreshCharacterViews(character) {
     if (!character) return;
     normalizeCharacterItemState(character);
+    queueCharacterItemStateSave(character);
     if (Array.isArray(characterList) && character.name) {
         const index = characterList.findIndex((entry) => entry?.name === character.name);
         if (index >= 0) {

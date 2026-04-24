@@ -107,6 +107,10 @@ const FIELD_KEYS = {
     money: ['所持金'],
     memo: ['メモ', '備考']
 };
+const CHARACTER_EQUIP_SLOT_KEYS = [
+    '武器', '武器2', '頭', '顔', '首', '体', '下着', '背中',
+    '右腕', '左腕', '右手', '左手', '腰', '右足', '左足'
+];
 
 function sanitizeTsvValue(value) {
     return String(value ?? '')
@@ -944,6 +948,56 @@ function findCharacterByName(characterName) {
     return cachedCharacters.find(
         (character) => pickFirstText(character, FIELD_KEYS.name) === normalizedName
     ) || null;
+}
+
+function extractCharacterItemName(value) {
+    if (typeof value === 'string') return normalizeText(value);
+    if (!value || typeof value !== 'object') return '';
+    return normalizeText(value?.名前 || value?.name);
+}
+
+function normalizeCharacterItemNameList(values) {
+    const source = Array.isArray(values) ? values : [values];
+    return source
+        .map((value) => extractCharacterItemName(value))
+        .filter(Boolean);
+}
+
+function buildCharacterEquipmentNameMap(rawEquipmentSlot = {}) {
+    const source = rawEquipmentSlot && typeof rawEquipmentSlot === 'object' && !Array.isArray(rawEquipmentSlot)
+        ? rawEquipmentSlot
+        : {};
+    const result = {};
+    CHARACTER_EQUIP_SLOT_KEYS.forEach((slot) => {
+        result[slot] = extractCharacterItemName(source?.[slot]);
+    });
+    return result;
+}
+
+function buildCharacterMongoFilterByName(characterName = '') {
+    const normalizedName = normalizeText(characterName);
+    const cached = findCharacterByName(normalizedName);
+    if (cached && Object.prototype.hasOwnProperty.call(cached, '_id') && cached._id !== undefined && cached._id !== null) {
+        return { _id: cached._id };
+    }
+    return { 名前: normalizedName };
+}
+
+function applyCharacterItemStateToCachedCharacter(characterName = '', itemState = {}) {
+    const normalizedName = normalizeText(characterName);
+    if (!normalizedName || !Array.isArray(cachedCharacters)) return;
+    const target = cachedCharacters.find((row) => pickFirstText(row, FIELD_KEYS.name) === normalizedName);
+    if (!target || typeof target !== 'object') return;
+
+    const equipmentSlotMap = buildCharacterEquipmentNameMap(itemState?.equipmentSlot);
+    const inventoryNames = normalizeCharacterItemNameList(itemState?.inventory);
+    const storageNames = normalizeCharacterItemNameList(itemState?.storage);
+
+    CHARACTER_EQUIP_SLOT_KEYS.forEach((slot) => {
+        target[slot] = equipmentSlotMap[slot] || '';
+    });
+    target['持ち物'] = inventoryNames.join(',');
+    target['倉庫'] = storageNames.join(',');
 }
 
 function buildLoginCharactersForUser(user) {
@@ -2884,6 +2938,71 @@ router.get('/character', async (req, res) => {
     } catch (error) {
         console.error('character fetch error:', error);
         return res.status(500).json({ success: false, message: 'failed to fetch character data' });
+    }
+});
+
+router.post('/character/items/save', async (req, res) => {
+    try {
+        const characterName = normalizeText(req.body?.characterName || req.body?.name);
+        if (!characterName) {
+            return res.status(400).json({ success: false, message: 'characterName is required' });
+        }
+        if (!canUseMongoStateStore()) {
+            return res.status(503).json({ success: false, message: 'mongodb is not enabled' });
+        }
+
+        const equipmentSlotMap = buildCharacterEquipmentNameMap(req.body?.equipmentSlot);
+        const inventoryNames = normalizeCharacterItemNameList(req.body?.inventory);
+        const storageNames = normalizeCharacterItemNameList(req.body?.storage);
+        const nowIso = new Date().toISOString();
+
+        const setPayload = {
+            持ち物: inventoryNames.join(','),
+            倉庫: storageNames.join(','),
+            updatedAt: nowIso
+        };
+        CHARACTER_EQUIP_SLOT_KEYS.forEach((slot) => {
+            setPayload[slot] = equipmentSlotMap[slot] || '';
+        });
+
+        const updateResult = await withMongoClient(async ({ db }) => {
+            const primaryFilter = buildCharacterMongoFilterByName(characterName);
+            let result = await db.collection('Character').updateOne(primaryFilter, { $set: setPayload });
+            if (
+                (!result || Number(result?.matchedCount || 0) <= 0)
+                && !Object.prototype.hasOwnProperty.call(primaryFilter, '名前')
+            ) {
+                result = await db.collection('Character').updateOne({ 名前: characterName }, { $set: setPayload });
+            }
+            return {
+                matchedCount: Number(result?.matchedCount || 0),
+                modifiedCount: Number(result?.modifiedCount || 0)
+            };
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        if (Number(updateResult?.matchedCount || 0) <= 0) {
+            return res.status(404).json({ success: false, message: 'character not found in mongodb' });
+        }
+
+        applyCharacterItemStateToCachedCharacter(characterName, {
+            equipmentSlot: equipmentSlotMap,
+            inventory: inventoryNames,
+            storage: storageNames
+        });
+
+        return res.json({
+            success: true,
+            characterName,
+            matchedCount: Number(updateResult?.matchedCount || 0),
+            modifiedCount: Number(updateResult?.modifiedCount || 0),
+            updatedAt: nowIso
+        });
+    } catch (error) {
+        console.error('character items save error:', error);
+        return res.status(500).json({ success: false, message: 'failed to save character items' });
     }
 });
 
