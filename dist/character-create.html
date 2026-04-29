@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>キャラクター作成 - TRPG</title>
+  <link rel="stylesheet" crossorigin href="/assets/characterCreate-hqA01diy.css">
+</head>
+<body>
+    <div id="app-scale-root">
+        <div id="app-frame">
+            <main class="create-page">
+                <form id="character-create-form" class="create-form">
+                    <div class="name-and-button">
+                        <label id="name_input" for="field-name">キャラクター名</label>
+                        <input id="field-name" name="name" type="text" required maxlength="40" placeholder="名前を入力" />
+                        <button id="create-submit" type="submit" class="create-btn">作成完了</button>
+                        <button id="open-profile-editor-button" type="button" class="profile-btn" hidden>プロフィール</button>
+                    </div>
+
+                    <div class="tabs" role="tablist" aria-label="作成タブ">
+                        <button type="button" class="tab-btn is-active" data-create-tab="status" aria-selected="true">ステータス</button>
+                        <button type="button" class="tab-btn" data-create-tab="skill" aria-selected="false">技能</button>
+                        <button type="button" class="tab-btn" data-create-tab="resistance" aria-selected="false">耐性</button>
+                        <button type="button" class="tab-btn" data-create-tab="tech" aria-selected="false">技</button>
+                        <button type="button" class="tab-btn" data-create-tab="attribute" aria-selected="false">属性</button>
+                    </div>
+
+                    <div class="table-wrapper">
+                        <table class="create-table">
+                            <thead>
+                                <tr id="acquired-class-head-row">
+                                    <th class="head-button-cell">
+                                        <button type="button" class="head-link" data-create-tab-target="attribute">
+                                            <span id="selected-primary-attribute">属性を選択</span>
+                                        </button>
+                                    </th>
+                                    <th>合計</th>
+                                </tr>
+                                <tr id="acquired-class-lv-row">
+                                    <td>Lv</td>
+                                    <td><span id="display-total-lv">1</span></td>
+                                </tr>
+                                <tr id="acquired-class-ef-row">
+                                    <td>Ef</td>
+                                    <td><span id="display-total-ef">0</span></td>
+                                </tr>
+                            </thead>
+
+                            <tbody data-create-panel="status">
+                                <tr data-status-row data-status-key="HP"><td>HP</td><td><span id="sum-hp">10</span></td></tr>
+                                <tr data-status-row data-status-key="MP"><td>MP</td><td><span id="sum-mp">10</span></td></tr>
+                                <tr data-status-row data-status-key="ST"><td>ST</td><td><span id="sum-st">10</span></td></tr>
+                                <tr data-status-row data-status-key="攻撃"><td>攻撃</td><td><span id="sum-attack">10</span></td></tr>
+                                <tr data-status-row data-status-key="防御"><td>防御</td><td><span id="sum-defense">10</span></td></tr>
+                                <tr data-status-row data-status-key="魔力"><td>魔力</td><td><span id="sum-magic">10</span></td></tr>
+                                <tr data-status-row data-status-key="魔防"><td>精神</td><td><span id="sum-magic-defense">10</span></td></tr>
+                                <tr data-status-row data-status-key="速度"><td>回避</td><td><span id="sum-speed">10</span></td></tr>
+                                <tr data-status-row data-status-key="命中"><td>命中</td><td><span id="sum-hit">10</span></td></tr>
+                                <tr data-status-row data-status-key="SIZ"><td>SIZ</td><td><span id="sum-siz">160</span></td></tr>
+                                <tr data-status-row data-status-key="APP"><td>APP</td><td><span id="sum-app">100</span></td></tr>
+                                <tr class="hidden-input-row">
+                                    <td class="js-full-span-cell">
+                                        <input id="field-hp" name="hp" type="hidden" value="10" />
+                                        <input id="field-mp" name="mp" type="hidden" value="10" />
+                                        <input id="field-st" name="st" type="hidden" value="10" />
+                                        <input id="field-attack" name="attack" type="hidden" value="10" />
+                                        <input id="field-defense" name="defense" type="hidden" value="10" />
+                                        <input id="field-magic" name="magic" type="hidden" value="10" />
+                                        <input id="field-magic-defense" name="magicDefense" type="hidden" value="10" />
+                                        <input id="field-speed" name="speed" type="hidden" value="10" />
+                                        <input id="field-hit" name="hit" type="hidden" value="10" />
+                                        <input id="field-siz" name="siz" type="hidden" value="160" />
+                                        <input id="field-app" name="app" type="hidden" value="100" />
+                                        <input id="field-title" name="title" type="hidden" value="" />
+                                        <input id="field-lv" name="lv" type="hidden" value="1" />
+                                        <input id="field-ef" name="ef" type="hidden" value="0" />
+                                        <input id="field-inventory-limit" name="inventoryLimit" type="hidden" value="15" />
+                                        <input id="field-money" name="money" type="hidden" value="0" />
+                                        <input id="field-profile" name="profile" type="hidden" value="" />
+                                    </td>
+                                </tr>
+                            </tbody>
+
+                            <tbody data-create-panel="skill" hidden>
+                                <tr class="hidden-input-row">
+                                    <td class="js-full-span-cell">
+                                        <div id="acquired-class-list" class="acquired-class-list"></div>
+                                    </td>
+                                </tr>
+                            </tbody>
+
+                            <tbody data-create-panel="resistance" hidden>
+                                <tr><td class="js-full-span-cell">耐性項目は準備中</td></tr>
+                            </tbody>
+
+                            <tbody data-create-panel="attribute" hidden>
+                                <tr class="attribute-panel-row">
+                                    <td class="js-full-span-cell">
+                                        <div id="attribute-domain-list" class="attribute-grid-wrap">
+                                            <table class="attribute-grid-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-1" class="attribute-picker-btn" data-attr-picker-index="1">属性1</button>
+                                                            <input id="field-attr-1" name="attr1" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-2" class="attribute-picker-btn" data-attr-picker-index="2">属性2</button>
+                                                            <input id="field-attr-2" name="attr2" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-3" class="attribute-picker-btn" data-attr-picker-index="3">属性3</button>
+                                                            <input id="field-attr-3" name="attr3" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-4" class="attribute-picker-btn" data-attr-picker-index="4">属性4</button>
+                                                            <input id="field-attr-4" name="attr4" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-5" class="attribute-picker-btn" data-attr-picker-index="5">属性5</button>
+                                                            <input id="field-attr-5" name="attr5" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-6" class="attribute-picker-btn" data-attr-picker-index="6">属性6</button>
+                                                            <input id="field-attr-6" name="attr6" type="hidden" />
+                                                        </th>
+                                                        <th>
+                                                            <button type="button" id="attr-picker-7" class="attribute-picker-btn" data-attr-picker-index="7">属性7</button>
+                                                            <input id="field-attr-7" name="attr7" type="hidden" />
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <tr>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-1-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-2-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-3-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-4-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-5-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-6-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                        <td>
+                                                            <div class="attribute-magic-table-wrap">
+                                                                <div class="attribute-magic-list-head"><span>R</span><span>名前</span></div>
+                                                                <div id="attr-7-magic-list" class="attribute-magic-list-body"></div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+
+                            <tbody data-create-panel="tech" hidden>
+                                <tr class="hidden-input-row">
+                                    <td class="js-full-span-cell">
+                                        <input id="field-memo" name="memo" type="hidden" value="" />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <section id="create-help-box" class="create-help-box" aria-live="polite">
+                        項目を選択すると説明が表示されます
+                    </section>
+
+                    <p id="create-error" class="error-message" aria-live="polite"></p>
+
+                    <div class="form-actions">
+                        <button id="create-cancel" type="button" class="ghost">選択に戻る</button>
+                    </div>
+                </form>
+            </main>
+        </div>
+    </div>
+
+    <div id="attribute-list-modal" class="attribute-list-modal" hidden aria-hidden="true">
+        <div id="attribute-list-modal-backdrop" class="attribute-list-modal-backdrop"></div>
+        <section class="attribute-list-modal-panel" role="dialog" aria-modal="true" aria-labelledby="attribute-list-modal-title">
+            <header class="attribute-list-modal-header">
+                <h2 id="attribute-list-modal-title">属性一覧</h2>
+                <p id="attribute-list-modal-before" class="attribute-list-modal-before">変更前: 未選択</p>
+            </header>
+            <div class="attribute-list-modal-body">
+                <div id="attribute-list-modal-grid" class="attribute-list-modal-grid"></div>
+
+                <section class="attribute-list-selected">
+                    <div class="attribute-list-selected-head">
+                        <span id="attribute-list-selected-icon" class="attribute-list-selected-icon">?</span>
+                        <div class="attribute-list-selected-title-wrap">
+                            <p id="attribute-list-selected-subtitle" class="attribute-list-selected-subtitle is-empty"></p>
+                            <p id="attribute-list-selected-title" class="attribute-list-selected-title">未選択</p>
+                        </div>
+                    </div>
+                    <p id="attribute-list-selected-description" class="attribute-list-selected-description">属性を選択してください。</p>
+                </section>
+
+                <section class="attribute-list-magic-section">
+                    <table class="attribute-list-magic-table">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>名前</th>
+                                <th>詳細</th>
+                            </tr>
+                        </thead>
+                        <tbody id="attribute-list-selected-magic-table-body"></tbody>
+                    </table>
+                </section>
+            </div>
+            <footer class="attribute-list-modal-footer">
+                <button type="button" id="attribute-list-modal-confirm" class="attribute-list-modal-confirm">決定</button>
+                <button type="button" id="attribute-list-modal-close" class="attribute-list-modal-close">閉じる</button>
+            </footer>
+        </section>
+    </div>
+
+    <div id="class-picker-modal" class="class-picker-modal" hidden aria-hidden="true">
+        <div id="class-picker-modal-backdrop" class="class-picker-modal-backdrop"></div>
+        <section class="class-picker-modal-panel" role="dialog" aria-modal="true" aria-labelledby="class-picker-modal-title">
+            <header class="class-picker-modal-header">
+                <h2 id="class-picker-modal-title">取得クラス編集</h2>
+                <p id="class-picker-modal-subtitle" class="class-picker-modal-subtitle">未設定なら「クラス追加」と表示されます</p>
+            </header>
+            <div class="class-picker-modal-body">
+                <section id="class-picker-type-step" class="class-picker-step">
+                    <p class="class-picker-step-title">項目リスト</p>
+                    <div id="class-picker-type-list-view" class="class-picker-name-list-view"></div>
+                </section>
+
+                <section id="class-picker-class-step" class="class-picker-step" hidden>
+                    <p class="class-picker-step-title">選択中の項目: <span id="class-picker-selected-type">未選択</span></p>
+                    <label for="class-picker-name-input">クラス名</label>
+                    <input id="class-picker-name-input" type="text" list="class-picker-name-list" placeholder="クラス名を選択" autocomplete="off" />
+                    <datalist id="class-picker-name-list"></datalist>
+                    <div id="class-picker-name-list-view" class="class-picker-name-list-view"></div>
+
+                    <div class="class-picker-level-row">
+                        <div>
+                            <label for="class-picker-lv-input">Lv</label>
+                            <input id="class-picker-lv-input" type="number" min="0" max="99" value="0" />
+                        </div>
+                        <div>
+                            <label for="class-picker-ef-input">Ef</label>
+                            <input id="class-picker-ef-input" type="number" min="0" max="99" value="0" />
+                        </div>
+                    </div>
+                </section>
+            </div>
+            <footer class="class-picker-modal-footer">
+                <button type="button" id="class-picker-modal-back" class="class-picker-modal-back" hidden>戻る</button>
+                <button type="button" id="class-picker-modal-save" class="class-picker-modal-save">反映</button>
+                <button type="button" id="class-picker-modal-clear" class="class-picker-modal-clear">削除</button>
+                <button type="button" id="class-picker-modal-close" class="class-picker-modal-close">閉じる</button>
+            </footer>
+        </section>
+    </div>
+
+    <script src="character-create.js"></script>
+</body>
+</html>

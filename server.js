@@ -13,6 +13,9 @@ const path = require('path');
 const apiRoutes = require('./routes/api');
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const staticSourceMode = String(process.env.STATIC_SOURCE || '').trim().toLowerCase();
+const preferPublicStatic = staticSourceMode === 'public'
+    || (staticSourceMode !== 'dist' && String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production');
 
 app.use(express.json());
 
@@ -22,6 +25,9 @@ const distDir = path.join(__dirname, 'dist');
 const publicDir = path.join(__dirname, 'public');
 
 function resolveHtmlPath(fileName) {
+    if (preferPublicStatic) {
+        return path.join(publicDir, fileName);
+    }
     const distPath = path.join(distDir, fileName);
     if (fs.existsSync(distPath)) return distPath;
     return path.join(publicDir, fileName);
@@ -33,6 +39,14 @@ app.get(['/', '/index.html'], (req, res) => {
 
 app.get('/story.html', (req, res) => {
     res.sendFile(resolveHtmlPath('story.html'));
+});
+
+app.get('/character-list.html', (req, res) => {
+    res.sendFile(resolveHtmlPath('character-list.html'));
+});
+
+app.get('/character-create.html', (req, res) => {
+    res.sendFile(resolveHtmlPath('character-create.html'));
 });
 
 app.get('/load.html', (req, res) => {
@@ -60,15 +74,23 @@ app.get('/favicon.ico', (req, res) => {
     res.status(204).end();
 });
 
-if (fs.existsSync(distDir)) {
-    app.use(express.static(distDir));
+if (preferPublicStatic) {
+    app.use(express.static(publicDir));
+    if (fs.existsSync(distDir)) {
+        app.use(express.static(distDir));
+    }
+} else {
+    if (fs.existsSync(distDir)) {
+        app.use(express.static(distDir));
+    }
+    app.use(express.static(publicDir));
 }
-app.use(express.static(publicDir));
 
 // APIルーティング
 app.use('/api', apiRoutes);
 
 // サーバーを起動
 app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[static] source=${preferPublicStatic ? 'public-first' : 'dist-first'}`);
     console.log(`Server is running on http://localhost:${PORT}`);
 });

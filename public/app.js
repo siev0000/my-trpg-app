@@ -27,6 +27,8 @@ let gmDashboardToken = "";
 
 const loginButton = document.getElementById("login-button");
 const startStoryButtonElement = document.getElementById("start-story-button");
+const editCharacterButtonElement = document.getElementById("edit-character-button");
+const createCharacterButtonElement = document.getElementById("create-character-button");
 const characterSelectCountElement = document.getElementById("character-select-count");
 const loginContainerElement = document.getElementById("login-container");
 const mainContainerElement = document.getElementById("main-container");
@@ -45,8 +47,8 @@ const characterStatusViewPanelElements = Array.from(document.querySelectorAll(".
 const characterStatsRadarElement = document.getElementById("character-stats-radar");
 const characterSidebarTitleElement = document.getElementById("character-sidebar-title");
 const defaultLoginButtonText = loginButton?.textContent || "ログイン";
-const baseScreenWidth = 720;
-const baseScreenHeight = 1280;
+const defaultBaseScreenWidth = 720;
+const defaultBaseScreenHeight = 1280;
 const MEMO_PROFILE_TAB_ID = "__profile__";
 const MEMO_PROFILE_TAB_TITLE = "プロフィール";
 const STATUS_RADAR_KEYS = ["HP", "ST", "攻撃", "防御", "速度", "命中", "魔防", "魔力", "MP"];
@@ -56,13 +58,22 @@ const STATUS_RADAR_LEGEND_ROWS = [
     ["魔力", "魔防"],
     ["命中", "速度"]
 ];
+const currentPageMode = String(document.body?.dataset?.page || "").trim().toLowerCase();
+const isCharacterListPage = currentPageMode === "character-list";
 
 function updateScreenScale() {
-    const widthScale = window.innerWidth / baseScreenWidth;
-    const heightScale = window.innerHeight / baseScreenHeight;
-    const shouldScaleDown = window.innerWidth <= baseScreenWidth || window.innerHeight <= baseScreenHeight;
-    const rawScale = shouldScaleDown ? Math.min(widthScale, heightScale) : 1;
-    const normalizedScale = Number.isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
+    const rootStyle = getComputedStyle(document.documentElement);
+    const cssWidth = Number(String(rootStyle.getPropertyValue("--design-width") || "").trim());
+    const cssHeight = Number(String(rootStyle.getPropertyValue("--design-height") || "").trim());
+    const designWidth = Number.isFinite(cssWidth) && cssWidth > 0 ? cssWidth : defaultBaseScreenWidth;
+    const designHeight = Number.isFinite(cssHeight) && cssHeight > 0 ? cssHeight : defaultBaseScreenHeight;
+
+    const widthScale = window.innerWidth / designWidth;
+    const heightScale = window.innerHeight / designHeight;
+    const rawScale = Math.min(widthScale, heightScale);
+    const normalizedScale = Number.isFinite(rawScale) && rawScale > 0
+        ? Math.min(rawScale, 1)
+        : 1;
     document.documentElement.style.setProperty("--app-scale", normalizedScale.toFixed(4));
 }
 
@@ -235,6 +246,58 @@ function attachMemoBundlesToCharacters(characters = [], memoBundleMap = {}) {
             __memoBundle: memoBundleMap?.[characterName] || null
         };
     });
+}
+
+function parseSessionJsonArray(key) {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return [];
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function buildCharacterSummaryFromRaw(character = {}) {
+    const source = character && typeof character === "object" ? character : {};
+    return {
+        名前: source?.名前 ?? source?.name ?? "",
+        二つ名: source?.二つ名 ?? "",
+        Lv: source?.Lv ?? 0,
+        Ef: source?.Ef ?? 0,
+        HP: source?.HP ?? 0,
+        MP: source?.MP ?? 0,
+        ST: source?.ST ?? 0,
+        攻撃: source?.攻撃 ?? 0,
+        防御: source?.防御 ?? 0,
+        魔力: source?.魔力 ?? 0,
+        魔防: source?.魔防 ?? 0,
+        速度: source?.速度 ?? 0,
+        命中: source?.命中 ?? 0,
+        SIZ: source?.SIZ ?? 0,
+        APP: source?.APP ?? 0,
+        能力値: source?.能力値 ?? 0,
+        持ち物: source?.持ち物 ?? source?.所持品 ?? "",
+        所持金: source?.所持金 ?? 0,
+        メモ: source?.メモ ?? source?.備考 ?? ""
+    };
+}
+
+async function fetchCharacterSummaryByName(characterName = "") {
+    const normalizedName = normalizeNameText(characterName);
+    if (!normalizedName) return null;
+    try {
+        const response = await fetch(`/api/character?name=${encodeURIComponent(normalizedName)}`);
+        const data = await response.json();
+        if (!response.ok || !data?.success || !data?.data) {
+            return null;
+        }
+        return buildCharacterSummaryFromRaw(data.data);
+    } catch (error) {
+        console.warn("character summary fetch failed:", normalizedName, error);
+        return null;
+    }
 }
 
 function formatDisplayTime(isoText) {
@@ -433,6 +496,54 @@ function resetLoginFields() {
     if (passwordInputElement) passwordInputElement.value = "";
 }
 
+async function initializeCharacterListPage() {
+    const playerId = normalizeNameText(
+        sessionStorage.getItem("playerId")
+        || sessionStorage.getItem("username")
+    );
+    if (!playerId) {
+        window.location.href = "index.html";
+        return;
+    }
+
+    let playerCharacterList = parseSessionJsonArray("playerCharacterList")
+        .map((name) => normalizeNameText(name))
+        .filter(Boolean);
+    let loginCharacters = parseSessionJsonArray("loginCharactersCache")
+        .filter((entry) => entry && typeof entry === "object");
+
+    if (playerCharacterList.length === 0 && loginCharacters.length > 0) {
+        playerCharacterList = loginCharacters
+            .map((entry) => normalizeNameText(entry?.名前 || entry?.name))
+            .filter((name, index, list) => name && list.indexOf(name) === index);
+    }
+
+    if (loginCharacters.length === 0 && playerCharacterList.length > 0) {
+        const fetched = await Promise.all(playerCharacterList.map((characterName) => (
+            fetchCharacterSummaryByName(characterName)
+        )));
+        loginCharacters = fetched.filter(Boolean);
+    }
+
+    playerCharacterList = playerCharacterList.filter((name, index, list) => list.indexOf(name) === index);
+    sessionStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
+    localStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
+    sessionStorage.setItem("playerId", playerId);
+    sessionStorage.setItem("username", playerId);
+
+    let memoBundleMap = {};
+    try {
+        memoBundleMap = await loadCharacterMemoBundles(playerId, playerCharacterList);
+    } catch (memoLoadError) {
+        console.warn("memo bundle load failed:", memoLoadError);
+    }
+
+    const mergedCharacters = attachMemoBundlesToCharacters(loginCharacters, memoBundleMap);
+    displayCharacterNames(mergedCharacters);
+    showMainView();
+    startPresenceHeartbeat(playerId, playerCharacterList);
+}
+
 const submitOnEnter = (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
@@ -443,9 +554,15 @@ usernameInputElement?.addEventListener("keydown", submitOnEnter);
 passwordInputElement?.addEventListener("keydown", submitOnEnter);
 window.addEventListener("resize", updateScreenScale);
 updateScreenScale();
-showLoginView();
 initializeCharacterSidebarTabs();
 initializeCharacterStatusViewTabs();
+
+if (isCharacterListPage) {
+    showMainView();
+    initializeCharacterListPage();
+} else {
+    showLoginView();
+}
 
 gmLogoutButtonElement?.addEventListener("click", () => {
     stopGmDashboardPolling();
@@ -454,6 +571,16 @@ gmLogoutButtonElement?.addEventListener("click", () => {
     resetLoginFields();
     setLoginErrorMessage("");
     showLoginView();
+});
+
+createCharacterButtonElement?.addEventListener("click", () => {
+    window.location.href = "character-create.html?mode=create";
+});
+
+editCharacterButtonElement?.addEventListener("click", () => {
+    const activeName = normalizeNameText(activeCharacter?.名前 || activeCharacter?.name);
+    if (!activeName) return;
+    window.location.href = `character-create.html?mode=edit&name=${encodeURIComponent(activeName)}`;
 });
 
 loginButton?.addEventListener("click", async () => {
@@ -512,19 +639,10 @@ loginButton?.addEventListener("click", async () => {
         sessionStorage.setItem("playerId", username);
         sessionStorage.setItem("username", username);
         sessionStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
+        sessionStorage.setItem("loginCharactersCache", JSON.stringify(loginCharacters));
         localStorage.setItem("playerCharacterList", JSON.stringify(playerCharacterList));
-
-        let memoBundleMap = {};
-        try {
-            memoBundleMap = await loadCharacterMemoBundles(username, playerCharacterList);
-        } catch (memoLoadError) {
-            console.warn("memo bundle load failed:", memoLoadError);
-        }
-
-        const mergedCharacters = attachMemoBundlesToCharacters(loginCharacters, memoBundleMap);
-        displayCharacterNames(mergedCharacters);
-        showMainView();
-        startPresenceHeartbeat(username, playerCharacterList);
+        window.location.href = "character-list.html";
+        return;
     } catch (error) {
         setLoginErrorMessage("通信エラーが発生しました。");
     } finally {
@@ -560,6 +678,7 @@ function displayCharacterNames(characters) {
         activeCharacterRowElement = rowElement;
         rowElement.classList.add("active");
         renderCharacterSidebar(character);
+        updateStartButtonState();
     };
 
     normalizedCharacters.forEach((character, index) => {
@@ -626,6 +745,9 @@ function updateStartButtonState() {
     }
     if (characterSelectCountElement) {
         characterSelectCountElement.textContent = `${selectedCharacters.length}/${totalCharacterCount}`;
+    }
+    if (editCharacterButtonElement) {
+        editCharacterButtonElement.disabled = !activeCharacter;
     }
 }
 

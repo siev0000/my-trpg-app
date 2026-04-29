@@ -3,7 +3,7 @@
         class="resource-adjust-modal"
         :class="{ 'is-open': isOpen }"
         :aria-hidden="!isOpen"
-        @click="cancel"
+        @click.self="ignoreBackdropClick"
     >
         <div
             class="resource-adjust-modal-content"
@@ -440,6 +440,10 @@ function cancel() {
     closeWith(null, true);
 }
 
+function ignoreBackdropClick() {
+    // 背景クリックでは閉じない（誤タップ防止）。
+}
+
 function submit() {
     const nextTargets = {
         hp: inputTargetMode.value === "meter"
@@ -648,7 +652,7 @@ onBeforeUnmount(() => {
 }
 
 .resource-adjust-row {
-    height: 90px;
+    height: 110px;
     border: 1px solid #d2deea;
     border-radius: 8px;
     background: #ffffff;
@@ -671,7 +675,7 @@ onBeforeUnmount(() => {
 
 .resource-adjust-current {
     min-width: 96px;
-    font-size: 15px;
+    font-size: 20px;
     font-weight: 700;
     color: #335777;
 }
@@ -713,7 +717,7 @@ onBeforeUnmount(() => {
     margin-left: auto;
     min-width: 64px;
     text-align: right;
-    font-size: 17px;
+    font-size: 23px;
     font-weight: 800;
     color: #1e4a73;
 }

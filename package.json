@@ -5,7 +5,7 @@
     "scripts": {
         "start": "node server.js",
         "predev:api": "npm run check:mojibake",
-        "dev:api": "cross-env PORT=3001 node server.js",
+        "dev:api": "cross-env PORT=3001 node --watch server.js",
         "predev": "npm run check:mojibake",
         "dev": "vite",
         "watch:mojibake": "node scripts/watch-mojibake.js",
@@ -20,6 +20,10 @@
         "start:with-build": "npm run build && node server.js",
         "prebuild": "npm run check:mojibake",
         "build": "vite build",
+        "build:watch": "vite build --watch",
+        "dev:serve:dist": "cross-env PORT=3000 node --watch server.js",
+        "dev:serve:public": "cross-env STATIC_SOURCE=public PORT=3000 node --watch server.js",
+        "dev:dist": "concurrently -k \"npm:watch:mojibake\" \"npm:build:watch\" \"npm:dev:serve:dist\"",
         "preview": "vite preview"
     },
     "dependencies": {

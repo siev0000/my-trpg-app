@@ -1,0 +1,91 @@
+{
+  "name": "ガブラス",
+  "race": "ゴブリン",
+  "Role": [
+    { "roleName": "ゴブリン", "Lv": 7, "Ef": 0 },
+    { "roleName": "フェンサー", "Lv": 3, "Ef": 0 }
+  ],
+  "stats": {
+    "allLv": 10,
+    "allEf": 0,
+    "baseStats": {},
+    "TechniqueValues": {},
+    "resistances": {},
+    "bodyAttributes": {},
+    "weaknesses": [],
+    "bodyType": 0
+  },
+  "experience": 0,
+  "nextLevelExp": 100,
+  "statusEffects": [],
+  "combatData": { "actionPoints": 30, "initiative": 10, "cooldowns": {} },
+  "temporaryBonuses": {},
+  "questProgress": [],
+  "storyFlags": {},
+  "equipmentSlot": {},
+  "inventory": [],
+  "maxInventory": 15,
+  "storage": [],
+  "money": 1200,
+  "appearance": {
+    "hairColor": "黒",
+    "eyeColor": "青",
+    "height": 170,
+    "weight": 65
+  },
+  "party": [],
+  "guild": { "name": "", "rank": 0, "contributionPoints": 0 },
+  "memoryStreet": [],
+  "currentLocation": "",
+  "notes": null,
+  "ultimateTechnique": null,
+  "savePoint": null,
+  "userId": "P2h2wPoE4xRnz5M9",
+  "_id": "3NQVJBI31AfTm0h5"
+},
+{
+    "name": "ガブラス",
+    "race": "ゴブリン",
+    "Role": [
+      { "roleName": "ゴブリン", "Lv": 7, "Ef": 0 },
+      { "roleName": "フェンサー", "Lv": 3, "Ef": 0 }
+    ],
+    "stats": {
+      "allLv": 10,
+      "allEf": 0,
+      "baseStats": {},
+      "TechniqueValues": {},
+      "resistances": {},
+      "bodyAttributes": {},
+      "weaknesses": [],
+      "bodyType": 0
+    },
+    "experience": 0,
+    "nextLevelExp": 100,
+    "statusEffects": [],
+    "combatData": { "actionPoints": 30, "initiative": 10, "cooldowns": {} },
+    "temporaryBonuses": {},
+    "questProgress": [],
+    "storyFlags": {},
+    "equipmentSlot": {},
+    "inventory": [],
+    "maxInventory": 15,
+    "storage": [],
+    "money": 1200,
+    "appearance": {
+      "hairColor": "黒",
+      "eyeColor": "青",
+      "height": 170,
+      "weight": 65
+    },
+    "party": [],
+    "guild": { "name": "", "rank": 0, "contributionPoints": 0 },
+    "memoryStreet": [],
+    "currentLocation": "",
+    "notes": null,
+    "ultimateTechnique": null,
+    "savePoint": null,
+    "userId": "P2h2wPoE4xRnz5M9",
+    "_id": "3NQVJBI31AfTm0h5"
+  }
+  

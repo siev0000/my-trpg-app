@@ -11,6 +11,7 @@ const gameDataDirPath = path.join(process.cwd(), 'game-data');
 const gameDataSkillsJsonPath = path.join(gameDataDirPath, 'スキル.json');
 const gameDataClassesJsonPath = path.join(gameDataDirPath, '職業.json');
 const gameDataMagicAcquireConfigPath = path.join(gameDataDirPath, '魔法取得設定.js');
+const gameDataMagicRealmListJsonPath = path.join(gameDataDirPath, '魔法領域リスト.json');
 const gameDataItemsJsonCandidates = [
     path.join(gameDataDirPath, '装備一覧.json'),
     path.join(gameDataDirPath, '装備.json'),
@@ -224,6 +225,35 @@ function pickFirstText(obj, keys, fallback = '') {
     const value = pickFirstValue(obj, keys, fallback);
     return normalizeText(value);
 }
+
+function extractMagicListFromRealmRow(row = {}) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return [];
+
+    const fromListField = Array.isArray(row?.magicList)
+        ? row.magicList
+        : (Array.isArray(row?.魔法リスト) ? row.魔法リスト : []);
+    const normalizedListField = fromListField
+        .map((value) => normalizeText(value))
+        .filter((value) => value && value !== '0');
+    if (normalizedListField.length > 0) return normalizedListField;
+
+    const indexedMagicFields = Object.entries(row)
+        .map(([key, value]) => {
+            const normalizedKey = normalizeText(key);
+            const match = normalizedKey.match(/^魔法\s*([0-9]+)$/) || normalizedKey.match(/^magic\s*([0-9]+)$/i);
+            if (!match) return null;
+            const index = Number.parseInt(match[1], 10);
+            const magicName = normalizeText(value);
+            if (!Number.isFinite(index) || !magicName || magicName === '0') return null;
+            return { index, magicName };
+        })
+        .filter((entry) => Boolean(entry))
+        .sort((a, b) => a.index - b.index);
+
+    if (indexedMagicFields.length <= 0) return [];
+    return indexedMagicFields.map((entry) => entry.magicName);
+}
+
 const magicAcquireSupport = createMagicAcquireSupport({
     configPath: gameDataMagicAcquireConfigPath,
     classNameFields: FIELD_KEYS.className,
@@ -235,11 +265,12 @@ function readJsonFileAsIs(filePath, fallbackValue) {
         return deepCloneJsonValue(fallbackValue);
     }
     const raw = fs.readFileSync(filePath, 'utf8');
-    if (!String(raw || '').trim()) {
+    const normalizedRaw = String(raw || '').replace(/^\uFEFF/, '');
+    if (!normalizedRaw.trim()) {
         return deepCloneJsonValue(fallbackValue);
     }
     try {
-        return JSON.parse(raw);
+        return JSON.parse(normalizedRaw);
     } catch (error) {
         console.error(`read json parse error: ${filePath}`, error);
         return deepCloneJsonValue(fallbackValue);
@@ -1034,6 +1065,151 @@ function buildLoginCharactersForUser(user) {
         });
     }
     return characters;
+}
+
+function getUserCharacterSlotEntries(user = {}) {
+    return Object.keys(user || {})
+        .map((key) => {
+            const match = String(key).match(/^(?:character[_-]?|キャラクター)(\d+)$/i);
+            if (!match) return null;
+            return {
+                key,
+                order: Number(match[1]),
+                name: normalizeText(user[key])
+            };
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.order - b.order);
+}
+
+function getUserCharacterNames(user = {}) {
+    const slotNames = getUserCharacterSlotEntries(user)
+        .map((entry) => normalizeText(entry?.name))
+        .filter(Boolean);
+    if (slotNames.length > 0) {
+        return normalizeNameList(slotNames);
+    }
+    return normalizeNameList(Array.isArray(user?.characters) ? user.characters : []);
+}
+
+function buildUserCharacterSlotPatch(user = {}, characterName = '') {
+    const nextCharacterName = normalizeText(characterName);
+    if (!nextCharacterName) {
+        return { changed: false, setPayload: {}, characterNames: getUserCharacterNames(user) };
+    }
+
+    const currentNames = getUserCharacterNames(user);
+    if (currentNames.includes(nextCharacterName)) {
+        return { changed: false, setPayload: {}, characterNames: currentNames };
+    }
+
+    const slotEntries = getUserCharacterSlotEntries(user);
+    const slotMap = new Map(slotEntries.map((entry) => [entry.order, entry]));
+    const maxOrder = slotEntries.reduce((max, entry) => Math.max(max, Number(entry?.order || 0)), 0);
+
+    let targetKey = '';
+    const upper = Math.max(1, maxOrder);
+    for (let order = 1; order <= upper; order += 1) {
+        const slot = slotMap.get(order);
+        if (!slot) {
+            targetKey = `character${order}`;
+            break;
+        }
+        if (!normalizeText(slot.name)) {
+            targetKey = slot.key;
+            break;
+        }
+    }
+    if (!targetKey) {
+        targetKey = `character${maxOrder + 1}`;
+    }
+
+    const nextNames = normalizeNameList([...currentNames, nextCharacterName]);
+    return {
+        changed: true,
+        setPayload: {
+            [targetKey]: nextCharacterName
+        },
+        characterNames: nextNames
+    };
+}
+
+function buildUserMongoFilterByLoginId(user = {}, fallbackLoginId = '') {
+    if (user && Object.prototype.hasOwnProperty.call(user, '_id') && user._id !== undefined && user._id !== null) {
+        return { _id: user._id };
+    }
+    const normalizedLoginId = normalizeText(fallbackLoginId) || getNormalizedUserLoginId(user);
+    return {
+        $or: [
+            { ID: normalizedLoginId },
+            { id: normalizedLoginId },
+            { userID: normalizedLoginId },
+            { username: normalizedLoginId },
+            { userName: normalizedLoginId },
+            { name: normalizedLoginId }
+        ]
+    };
+}
+
+function buildCreateCharacterDocument(rawCharacter = {}) {
+    const source = rawCharacter && typeof rawCharacter === 'object' && !Array.isArray(rawCharacter)
+        ? rawCharacter
+        : {};
+    const readInt = (value, fallback = 0) => {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.trunc(parsed) : fallback;
+    };
+    const positiveInt = (value, fallback = 0) => Math.max(0, readInt(value, fallback));
+    const normalizedName = normalizeText(source?.名前 || source?.name);
+    const attack = positiveInt(source?.攻撃, 0);
+    const defense = positiveInt(source?.防御, 0);
+    const magic = positiveInt(source?.魔力, 0);
+    const magicDefense = positiveInt(source?.魔防, 0);
+    const speed = positiveInt(source?.速度, 0);
+    const hit = positiveInt(source?.命中, 0);
+    const abilityValue = positiveInt(source?.能力値, attack + defense + magic + magicDefense + speed + hit);
+
+    const document = {
+        名前: normalizedName,
+        二つ名: normalizeText(source?.二つ名),
+        Lv: Math.max(1, readInt(source?.Lv, 1)),
+        Ef: positiveInt(source?.Ef, 0),
+        HP: positiveInt(source?.HP, 10),
+        MP: positiveInt(source?.MP, 10),
+        ST: positiveInt(source?.ST, 10),
+        攻撃: attack,
+        防御: defense,
+        魔力: magic,
+        魔防: magicDefense,
+        速度: speed,
+        命中: hit,
+        SIZ: Math.max(1, readInt(source?.SIZ, 160)),
+        APP: Math.max(1, readInt(source?.APP, 100)),
+        合計値: positiveInt(source?.合計値, abilityValue),
+        所持金: positiveInt(source?.所持金, 0),
+        持ち物: normalizeText(source?.持ち物),
+        倉庫: normalizeText(source?.倉庫),
+        転移地点: normalizeText(source?.転移地点),
+        プロフィール: normalizeText(source?.プロフィール),
+        現在地: normalizeText(source?.現在地),
+        手持ち上限: Math.max(1, readInt(source?.手持ち上限, 15)),
+        順番: positiveInt(source?.順番, 0),
+        メモ: normalizeText(source?.メモ)
+    };
+
+    for (let i = 1; i <= 20; i += 1) {
+        const key = `取得${i}`;
+        document[key] = normalizeText(source?.[key]);
+    }
+    for (let i = 1; i <= 7; i += 1) {
+        const key = `属性${i}`;
+        document[key] = normalizeText(source?.[key]);
+    }
+    CHARACTER_EQUIP_SLOT_KEYS.forEach((slot) => {
+        document[slot] = normalizeText(source?.[slot]);
+    });
+
+    return document;
 }
 
 function toFiniteNumber(value, fallback = 0) {
@@ -2763,6 +2939,52 @@ async function findUserByCredentials(username = '', password = '') {
     }
 }
 
+async function findUserByLoginId(username = '') {
+    const normalizedUsername = normalizeText(username);
+    if (!normalizedUsername) return null;
+
+    const cachedUser = (Array.isArray(cachedUsers) ? cachedUsers : []).find((user) => (
+        getNormalizedUserLoginId(user) === normalizedUsername
+    ));
+    if (cachedUser) return cachedUser;
+    if (!useMongoPrimaryData) return null;
+
+    try {
+        const docs = await withMongoClient(async ({ db }) => (
+            db.collection('User')
+                .find({
+                    $or: [
+                        { ID: normalizedUsername },
+                        { id: normalizedUsername },
+                        { userID: normalizedUsername },
+                        { username: normalizedUsername },
+                        { userName: normalizedUsername },
+                        { name: normalizedUsername }
+                    ]
+                })
+                .limit(20)
+                .toArray()
+        ), {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        const normalizedUsers = (Array.isArray(docs) ? docs : [])
+            .map((row) => normalizeMongoUserRow(row));
+        if (normalizedUsers.length > 0) {
+            const combinedUsers = [
+                ...(Array.isArray(cachedUsers) ? cachedUsers : []),
+                ...normalizedUsers
+            ];
+            cachedUsers = dedupeBy(combinedUsers, (row) => getNormalizedUserLoginId(row));
+        }
+        return normalizedUsers.find((user) => getNormalizedUserLoginId(user) === normalizedUsername) || null;
+    } catch (error) {
+        console.error('[mongo] user query failed:', error?.message || error);
+        return null;
+    }
+}
+
 async function loadMongoPrimaryData(forceReload = false) {
     if (!useMongoPrimaryData) return false;
     if (mongoPrimaryReloadInProgress && mongoPrimaryReloadPromise) {
@@ -2938,6 +3160,312 @@ router.get('/character', async (req, res) => {
     } catch (error) {
         console.error('character fetch error:', error);
         return res.status(500).json({ success: false, message: 'failed to fetch character data' });
+    }
+});
+
+router.post('/character/create', async (req, res) => {
+    try {
+        if (!canUseMongoStateStore()) {
+            return res.status(503).json({ success: false, message: 'mongodb is not enabled' });
+        }
+
+        await ensureMongoPrimaryCache({ users: true, characters: true });
+        const playerId = normalizeText(req.body?.playerId || req.body?.username || req.body?.userId);
+        if (!playerId) {
+            return res.status(400).json({ success: false, message: 'playerId is required' });
+        }
+
+        const user = await findUserByLoginId(playerId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'user not found' });
+        }
+
+        const characterDoc = buildCreateCharacterDocument(req.body?.character);
+        const characterName = normalizeText(characterDoc?.名前);
+        if (!characterName) {
+            return res.status(400).json({ success: false, message: 'character name is required' });
+        }
+        if (findCharacterByName(characterName)) {
+            return res.status(409).json({ success: false, message: 'character already exists' });
+        }
+
+        const nowIso = new Date().toISOString();
+        characterDoc.createdAt = nowIso;
+        characterDoc.updatedAt = nowIso;
+
+        const inserted = await withMongoClient(async ({ db }) => {
+            const result = await db.collection('Character').insertOne(characterDoc);
+
+            const patch = buildUserCharacterSlotPatch(user, characterName);
+            let userMatchedCount = 0;
+            if (patch.changed) {
+                const userFilter = buildUserMongoFilterByLoginId(user, playerId);
+                const userUpdateResult = await db.collection('User').updateOne(userFilter, {
+                    $set: {
+                        ...patch.setPayload,
+                        updatedAt: nowIso
+                    }
+                });
+                userMatchedCount = Number(userUpdateResult?.matchedCount || 0);
+            }
+
+            return {
+                insertedId: result?.insertedId || null,
+                userPatch: patch,
+                userMatchedCount
+            };
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        if (!inserted?.insertedId) {
+            return res.status(500).json({ success: false, message: 'failed to insert character' });
+        }
+        if (inserted?.userPatch?.changed && Number(inserted?.userMatchedCount || 0) <= 0) {
+            return res.status(500).json({ success: false, message: 'failed to update user slots' });
+        }
+
+        const cachedCharacter = normalizeMongoCharacterRow({
+            ...characterDoc,
+            _id: inserted.insertedId
+        });
+        cachedCharacters = [
+            ...(Array.isArray(cachedCharacters) ? cachedCharacters : []),
+            cachedCharacter
+        ];
+
+        const normalizedPlayerId = normalizeText(playerId);
+        const userIndex = (Array.isArray(cachedUsers) ? cachedUsers : []).findIndex((entry) => (
+            getNormalizedUserLoginId(entry) === normalizedPlayerId
+        ));
+        let updatedUser = user;
+        if (inserted?.userPatch?.changed) {
+            updatedUser = {
+                ...user,
+                ...inserted.userPatch.setPayload,
+                updatedAt: nowIso
+            };
+        }
+        if (userIndex >= 0) {
+            cachedUsers[userIndex] = updatedUser;
+        } else {
+            cachedUsers = [
+                ...(Array.isArray(cachedUsers) ? cachedUsers : []),
+                updatedUser
+            ];
+        }
+
+        return res.status(200).json({
+            success: true,
+            character: buildCharacterSummary(cachedCharacter),
+            characterNames: getUserCharacterNames(updatedUser),
+            message: 'character created'
+        });
+    } catch (error) {
+        console.error('character create error:', error);
+        return res.status(500).json({ success: false, message: 'failed to create character' });
+    }
+});
+
+router.post('/character/update', async (req, res) => {
+    try {
+        if (!canUseMongoStateStore()) {
+            return res.status(503).json({ success: false, message: 'mongodb is not enabled' });
+        }
+
+        await ensureMongoPrimaryCache({ users: true, characters: true });
+        const playerId = normalizeText(req.body?.playerId || req.body?.username || req.body?.userId);
+        if (!playerId) {
+            return res.status(400).json({ success: false, message: 'playerId is required' });
+        }
+
+        const user = await findUserByLoginId(playerId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'user not found' });
+        }
+
+        const characterName = normalizeText(req.body?.characterName || req.body?.name || req.body?.character?.名前);
+        if (!characterName) {
+            return res.status(400).json({ success: false, message: 'characterName is required' });
+        }
+
+        const editableCharacterNames = getUserCharacterNames(user);
+        if (!editableCharacterNames.includes(characterName)) {
+            return res.status(403).json({ success: false, message: 'character is not editable by this user' });
+        }
+
+        const existingCharacter = findCharacterByName(characterName);
+        if (!existingCharacter) {
+            return res.status(404).json({ success: false, message: 'character not found' });
+        }
+
+        const nextCharacterDoc = buildCreateCharacterDocument(req.body?.character);
+        const requestName = normalizeText(nextCharacterDoc?.名前);
+        if (requestName && requestName !== characterName) {
+            return res.status(400).json({ success: false, message: 'renaming character is not supported' });
+        }
+
+        const nowIso = new Date().toISOString();
+        nextCharacterDoc.名前 = characterName;
+        nextCharacterDoc.createdAt = normalizeText(existingCharacter?.createdAt) || nowIso;
+        nextCharacterDoc.updatedAt = nowIso;
+
+        const updateResult = await withMongoClient(async ({ db }) => {
+            const primaryFilter = buildCharacterMongoFilterByName(characterName);
+            let result = await db.collection('Character').updateOne(primaryFilter, { $set: nextCharacterDoc });
+            if (
+                (!result || Number(result?.matchedCount || 0) <= 0)
+                && !Object.prototype.hasOwnProperty.call(primaryFilter, '名前')
+            ) {
+                result = await db.collection('Character').updateOne({ 名前: characterName }, { $set: nextCharacterDoc });
+            }
+            return {
+                matchedCount: Number(result?.matchedCount || 0),
+                modifiedCount: Number(result?.modifiedCount || 0)
+            };
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        if (Number(updateResult?.matchedCount || 0) <= 0) {
+            return res.status(404).json({ success: false, message: 'character not found in mongodb' });
+        }
+
+        const normalizedCharacter = normalizeMongoCharacterRow({
+            ...existingCharacter,
+            ...nextCharacterDoc
+        });
+        const normalizedName = normalizeText(characterName);
+        const nextCache = Array.isArray(cachedCharacters) ? [...cachedCharacters] : [];
+        const targetIndex = nextCache.findIndex((entry) => pickFirstText(entry, FIELD_KEYS.name) === normalizedName);
+        if (targetIndex >= 0) {
+            nextCache[targetIndex] = normalizedCharacter;
+        } else {
+            nextCache.push(normalizedCharacter);
+        }
+        cachedCharacters = nextCache;
+
+        return res.status(200).json({
+            success: true,
+            character: buildCharacterSummary(normalizedCharacter),
+            characterNames: editableCharacterNames,
+            matchedCount: Number(updateResult?.matchedCount || 0),
+            modifiedCount: Number(updateResult?.modifiedCount || 0),
+            message: 'character updated'
+        });
+    } catch (error) {
+        console.error('character update error:', error);
+        return res.status(500).json({ success: false, message: 'failed to update character' });
+    }
+});
+
+router.get('/character/profile', async (req, res) => {
+    try {
+        await ensureMongoPrimaryCache({ characters: true });
+        const characterName = normalizeText(req.query.name);
+        if (!characterName) {
+            return res.status(400).json({ success: false, message: 'name is required' });
+        }
+        const character = findCharacterByName(characterName);
+        if (!character) {
+            return res.status(404).json({ success: false, message: 'character not found' });
+        }
+        return res.status(200).json({
+            success: true,
+            data: {
+                名前: characterName,
+                プロフィール: normalizeText(character?.プロフィール)
+            }
+        });
+    } catch (error) {
+        console.error('character profile fetch error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch character profile' });
+    }
+});
+
+router.post('/character/profile/update', async (req, res) => {
+    try {
+        if (!canUseMongoStateStore()) {
+            return res.status(503).json({ success: false, message: 'mongodb is not enabled' });
+        }
+
+        await ensureMongoPrimaryCache({ users: true, characters: true });
+        const playerId = normalizeText(req.body?.playerId || req.body?.username || req.body?.userId);
+        if (!playerId) {
+            return res.status(400).json({ success: false, message: 'playerId is required' });
+        }
+
+        const characterName = normalizeText(req.body?.characterName || req.body?.name);
+        if (!characterName) {
+            return res.status(400).json({ success: false, message: 'characterName is required' });
+        }
+
+        const user = await findUserByLoginId(playerId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'user not found' });
+        }
+
+        const editableCharacterNames = getUserCharacterNames(user);
+        if (!editableCharacterNames.includes(characterName)) {
+            return res.status(403).json({ success: false, message: 'character is not editable by this user' });
+        }
+
+        const existingCharacter = findCharacterByName(characterName);
+        if (!existingCharacter) {
+            return res.status(404).json({ success: false, message: 'character not found' });
+        }
+
+        const profileText = normalizeText(req.body?.profile);
+        const nowIso = new Date().toISOString();
+        const setPayload = {
+            プロフィール: profileText,
+            updatedAt: nowIso
+        };
+
+        const updateResult = await withMongoClient(async ({ db }) => {
+            const primaryFilter = buildCharacterMongoFilterByName(characterName);
+            let result = await db.collection('Character').updateOne(primaryFilter, { $set: setPayload });
+            if (
+                (!result || Number(result?.matchedCount || 0) <= 0)
+                && !Object.prototype.hasOwnProperty.call(primaryFilter, '名前')
+            ) {
+                result = await db.collection('Character').updateOne({ 名前: characterName }, { $set: setPayload });
+            }
+            return {
+                matchedCount: Number(result?.matchedCount || 0),
+                modifiedCount: Number(result?.modifiedCount || 0)
+            };
+        }, {
+            uri: mongoConfig.uri,
+            dbName: mongoConfig.dbName
+        });
+
+        if (Number(updateResult?.matchedCount || 0) <= 0) {
+            return res.status(404).json({ success: false, message: 'character not found in mongodb' });
+        }
+
+        const normalizedName = normalizeText(characterName);
+        if (Array.isArray(cachedCharacters)) {
+            const target = cachedCharacters.find((row) => pickFirstText(row, FIELD_KEYS.name) === normalizedName);
+            if (target && typeof target === 'object') {
+                target['プロフィール'] = profileText;
+                target.updatedAt = nowIso;
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            characterName: normalizedName,
+            profile: profileText,
+            matchedCount: Number(updateResult?.matchedCount || 0),
+            modifiedCount: Number(updateResult?.modifiedCount || 0),
+            message: 'character profile updated'
+        });
+    } catch (error) {
+        console.error('character profile update error:', error);
+        return res.status(500).json({ success: false, message: 'failed to update character profile' });
     }
 });
 
@@ -3260,6 +3788,166 @@ router.post('/magics', async (req, res) => {
     }
 });
 
+router.get('/magic/realms', (req, res) => {
+    try {
+        ensureGameDataClassesLoaded();
+        ensureGameDataSkillsLoaded();
+        magicAcquireSupport.ensureConfigLoaded();
+
+        const config = magicAcquireSupport.getConfig();
+        const realmNameSuffix = normalizeText(config?.realmNameSuffix) || '領域';
+        const sourceRows = Array.isArray(cachedClasses) ? cachedClasses : [];
+        const seenAttributeSet = new Set();
+        const derivedAttributes = [];
+        const extractAttributeFromRealmName = (realmName = '') => {
+            const normalizedRealmName = normalizeText(realmName);
+            if (!normalizedRealmName) return '';
+            if (normalizedRealmName.endsWith(`の${realmNameSuffix}`)) {
+                return normalizeText(normalizedRealmName.slice(0, -(`の${realmNameSuffix}`).length));
+            }
+            if (normalizedRealmName.endsWith(realmNameSuffix)) {
+                return normalizeText(normalizedRealmName.slice(0, -realmNameSuffix.length).replace(/の$/, ''));
+            }
+            return normalizedRealmName;
+        };
+
+        sourceRows.forEach((row) => {
+            const className = pickFirstText(row, FIELD_KEYS.className);
+            if (!className || !className.endsWith(realmNameSuffix)) return;
+
+            const attribute = extractAttributeFromRealmName(className);
+
+            if (!attribute || seenAttributeSet.has(attribute)) return;
+            seenAttributeSet.add(attribute);
+            derivedAttributes.push(attribute);
+        });
+
+        if (derivedAttributes.length <= 0) {
+            const defaults = Array.isArray(config?.defaultMagicAttributes)
+                ? config.defaultMagicAttributes.map((value) => normalizeText(value)).filter(Boolean)
+                : [];
+            defaults.forEach((attribute) => {
+                if (seenAttributeSet.has(attribute)) return;
+                seenAttributeSet.add(attribute);
+                derivedAttributes.push(attribute);
+            });
+        }
+
+        const masterRaw = readJsonFileAsIs(gameDataMagicRealmListJsonPath, { realms: [] });
+        const masterSource = Array.isArray(masterRaw)
+            ? masterRaw
+            : (Array.isArray(masterRaw?.realms) ? masterRaw.realms : []);
+        const normalizedMaster = [];
+        masterSource.forEach((row, index) => {
+            if (!row || typeof row !== 'object') return;
+            const attribute = normalizeText(row.attribute || row.属性 || extractAttributeFromRealmName(row.realmName || row.領域名 || row.name));
+            if (!attribute) return;
+
+            const realmName = normalizeText(row.realmName || row.領域名 || row.name) || `${attribute}の${realmNameSuffix}`;
+            const description = normalizeText(row.description || row.説明);
+            const iconName = normalizeText(row.iconName || row.アイコン名) || attribute;
+            const magicList = extractMagicListFromRealmRow(row);
+            const countCandidate = toFiniteNumber(row.count ?? row.数, Number.NaN);
+            const count = Number.isFinite(countCandidate) ? Math.max(0, Math.round(countCandidate)) : null;
+            const orderCandidate = toFiniteNumber(row.order ?? row.順番, Number.NaN);
+            const order = Number.isFinite(orderCandidate) ? orderCandidate : index + 1;
+            normalizedMaster.push({
+                attribute,
+                realmName,
+                description,
+                iconName,
+                magicList,
+                count,
+                order
+            });
+        });
+
+        normalizedMaster.sort((a, b) => a.order - b.order);
+        const masterOrderedAttributes = [];
+        const seenMasterAttributes = new Set();
+        normalizedMaster.forEach((row) => {
+            const attribute = normalizeText(row?.attribute);
+            if (!attribute || seenMasterAttributes.has(attribute)) return;
+            seenMasterAttributes.add(attribute);
+            masterOrderedAttributes.push(attribute);
+        });
+
+        const attributes = masterOrderedAttributes.length > 0
+            ? [
+                ...masterOrderedAttributes,
+                ...derivedAttributes.filter((attribute) => !masterOrderedAttributes.includes(attribute))
+            ]
+            : [...derivedAttributes];
+        const masterByAttribute = new Map();
+        normalizedMaster.forEach((row) => {
+            const attribute = normalizeText(row?.attribute);
+            if (!attribute || masterByAttribute.has(attribute)) return;
+            masterByAttribute.set(attribute, row);
+        });
+
+        const { realmNames, magicListByDomain } = magicAcquireSupport.buildRealmMagicListByAttributes(
+            sourceRows,
+            attributes
+        );
+        const skillByName = new Map();
+        (Array.isArray(cachedSkills) ? cachedSkills : []).forEach((row) => {
+            const skillName = pickFirstText(row, FIELD_KEYS.skillName);
+            if (!skillName || skillByName.has(skillName)) return;
+            skillByName.set(skillName, row);
+        });
+        const domainByName = new Map(
+            (Array.isArray(magicListByDomain) ? magicListByDomain : [])
+                .map((entry) => [normalizeText(entry?.className), entry])
+                .filter(([className]) => Boolean(className))
+        );
+        const realms = realmNames.map((realmName, index) => {
+            const attribute = normalizeText(attributes[index] || extractAttributeFromRealmName(realmName));
+            if (!attribute) return null;
+            const masterEntry = masterByAttribute.get(attribute) || null;
+            const fallbackRealmName = normalizeText(masterEntry?.realmName) || normalizeText(realmName) || `${attribute}の${realmNameSuffix}`;
+            const entry = domainByName.get(fallbackRealmName) || domainByName.get(`${attribute}の${realmNameSuffix}`) || {};
+            const classMagicList = Array.isArray(entry?.magicList) ? entry.magicList : [];
+            const masterMagicList = Array.isArray(masterEntry?.magicList)
+                ? masterEntry.magicList.map((value) => normalizeText(value)).filter(Boolean)
+                : [];
+            const magicList = masterMagicList.length > 0 ? masterMagicList : classMagicList;
+            const magicEntries = magicList.map((magicName) => {
+                const normalizedMagicName = normalizeText(magicName);
+                if (!normalizedMagicName) return null;
+                const skillRow = skillByName.get(normalizedMagicName) || null;
+                const requiredRank = toFiniteNumber(magicAcquireSupport.getSkillRequiredMagicRank(skillRow || {}), 0);
+                const detail = normalizeText(pickFirstValue(skillRow || {}, FIELD_KEYS.skillDetail));
+                return {
+                    name: normalizedMagicName,
+                    rank: requiredRank > 0 ? Math.trunc(requiredRank) : 0,
+                    detail
+                };
+            }).filter((entry) => Boolean(entry?.name));
+            const resolvedClassName = normalizeText(entry?.className) || fallbackRealmName;
+            return {
+                attribute,
+                realmName: resolvedClassName,
+                magicList,
+                magicEntries,
+                description: normalizeText(masterEntry?.description),
+                iconName: normalizeText(masterEntry?.iconName) || attribute,
+                count: Number.isFinite(masterEntry?.count) ? masterEntry.count : magicList.length
+            };
+        }).filter((entry) => Boolean(entry && entry.attribute));
+        const responseAttributes = realms.map((entry) => normalizeText(entry?.attribute)).filter(Boolean);
+
+        return res.json({
+            success: true,
+            realmNameSuffix,
+            attributes: responseAttributes,
+            realms
+        });
+    } catch (error) {
+        console.error('magic realms fetch error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch magic realms' });
+    }
+});
+
 router.post('/classes', (req, res) => {
     ensureGameDataClassesLoaded();
     const { classList } = req.body;
@@ -3271,6 +3959,44 @@ router.post('/classes', (req, res) => {
     );
 
     res.json({ success: true, classData: matchedClasses });
+});
+
+router.get('/classes/names', (req, res) => {
+    try {
+        ensureGameDataClassesLoaded();
+        const classItems = [];
+        const seenNames = new Set();
+        (Array.isArray(cachedClasses) ? cachedClasses : []).forEach((row) => {
+            const className = pickFirstText(row, FIELD_KEYS.className);
+            if (!className || seenNames.has(className)) return;
+            const lvText = normalizeText(pickFirstValue(row, ['Lv'], ''));
+            if (!lvText) return;
+            const lvNumber = Number(lvText);
+            if (!Number.isFinite(lvNumber) || lvNumber <= 0) return;
+            if (/^\d+$/.test(className)) return;
+            seenNames.add(className);
+            const classType = normalizeText(
+                pickFirstValue(row, ['クラス', '種別', 'クラス2'], '')
+            ) || '未分類';
+            const condition = normalizeText(pickFirstValue(row, ['条件'], ''));
+            const conditionLv = normalizeText(pickFirstValue(row, ['条件Lv'], ''));
+            const totalLv = normalizeText(pickFirstValue(row, ['合計Lv'], ''));
+            const description = normalizeText(pickFirstValue(row, ['説明', '愚痴'], ''));
+            classItems.push({
+                name: className,
+                type: classType,
+                condition,
+                conditionLv,
+                totalLv,
+                description
+            });
+        });
+        const classNames = classItems.map((entry) => entry.name);
+        return res.json({ success: true, classNames, classItems });
+    } catch (error) {
+        console.error('class names fetch error:', error);
+        return res.status(500).json({ success: false, message: 'failed to fetch class names' });
+    }
 });
 
 router.post('/body', (req, res) => {

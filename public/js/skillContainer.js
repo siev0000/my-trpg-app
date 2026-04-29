@@ -1245,6 +1245,11 @@ const attackOptions = [
 ];
 
 const BODY_ATTACK_OPTION_VALUES = ["素手", "爪", "牙", "角", "羽", "尾", "脚", "眼"];
+const WEAPON_GENERATION_BASE_CRIT_RATE = 10;
+const WEAPON_GENERATION_BASE_CRIT_POWER = 135;
+const weaponGenerationAttackOptionOriginalMap = new Map();
+const EYE_ATTACK_OPTION_VALUE = "眼";
+const eyeAttackOptionOriginalMap = new Map();
 
 function buildAttackOptionData(option) {
     if (!option || typeof option !== "object") return null;
@@ -1360,6 +1365,455 @@ function getDefaultAttackOptionValue(options = attackOptions) {
 function isWeaponAttackOptionValue(value) {
     const normalized = normalizeBattleText(value);
     return normalized === "武器" || normalized === "武器2" || normalized === "武器3";
+}
+
+function cloneAttackOptionSnapshot(option) {
+    if (!option || typeof option !== "object") return null;
+    const raw = (option?.総合 && typeof option.総合 === "object")
+        ? { ...option.総合 }
+        : option?.総合;
+    return {
+        ...option,
+        総合: raw
+    };
+}
+
+function restoreWeaponGenerationAttackOptionOverrides(options = attackOptions) {
+    const list = Array.isArray(options) ? options : [];
+    if (!weaponGenerationAttackOptionOriginalMap.size) return;
+    weaponGenerationAttackOptionOriginalMap.forEach((snapshot, value) => {
+        const option = list.find((row) => normalizeBattleText(row?.value) === normalizeBattleText(value));
+        if (!option || !snapshot) return;
+        Object.assign(option, cloneAttackOptionSnapshot(snapshot));
+    });
+    weaponGenerationAttackOptionOriginalMap.clear();
+}
+
+function restoreEyeAttackOptionBonuses(options = attackOptions) {
+    const list = Array.isArray(options) ? options : [];
+    if (!eyeAttackOptionOriginalMap.size) return;
+    eyeAttackOptionOriginalMap.forEach((snapshot, value) => {
+        const option = list.find((row) => normalizeBattleText(row?.value) === normalizeBattleText(value));
+        if (!option || !snapshot) return;
+        Object.assign(option, cloneAttackOptionSnapshot(snapshot));
+    });
+    eyeAttackOptionOriginalMap.clear();
+}
+
+function getSkillAttackMethodTokens(skillData) {
+    if (!skillData || typeof skillData !== "object") return [];
+    const tokens = new Set();
+    const methodField = skillData?.攻撃手段 ?? skillData?.attackMethod;
+    splitConditionTokens(methodField).forEach((token) => tokens.add(token));
+
+    const detail = normalizeBattleText(skillData?.詳細 || skillData?.description);
+    if (detail) {
+        const matches = detail.match(/攻撃手段\s*[:：]\s*([^\s,，/／|｜]+)/g) || [];
+        matches.forEach((entry) => {
+            const text = entry.replace(/攻撃手段\s*[:：]/g, "");
+            splitConditionTokens(text).forEach((token) => tokens.add(token));
+        });
+    }
+    return Array.from(tokens);
+}
+
+function isEyeAttackMethodSkill(skillData) {
+    const tokens = getSkillAttackMethodTokens(skillData);
+    return tokens.some((token) => {
+        const text = normalizeBattleText(token);
+        return text === EYE_ATTACK_OPTION_VALUE || text.includes(EYE_ATTACK_OPTION_VALUE);
+    });
+}
+
+function isEyeAttackScaledKey(key = "") {
+    const normalizedKey = normalizeBattleText(key);
+    return [
+        "切断", "貫通", "打撃", "射撃",
+        "炎", "氷", "雷", "酸", "音波", "闇", "光", "善", "悪", "正", "負", "毒"
+    ].includes(normalizedKey);
+}
+
+function applyActiveEyeAttackOptionBonuses(options = attackOptions, context = {}) {
+    const list = Array.isArray(options) ? options : [];
+    restoreEyeAttackOptionBonuses(list);
+
+    const eyeOption = list.find((option) => normalizeBattleText(option?.value) === EYE_ATTACK_OPTION_VALUE);
+    if (!eyeOption) return;
+
+    const characterName = normalizeBattleText(
+        context?.characterName
+        || selectName
+        || playerData?.name
+        || ""
+    );
+    const activeSkills = getRetainedBuffSkillDataListForCharacter(characterName)
+        .filter((skillData) => isEyeAttackMethodSkill(skillData));
+    if (!activeSkills.length) return;
+
+    if (!eyeAttackOptionOriginalMap.has(EYE_ATTACK_OPTION_VALUE)) {
+        eyeAttackOptionOriginalMap.set(EYE_ATTACK_OPTION_VALUE, cloneAttackOptionSnapshot(eyeOption));
+    }
+
+    const baseRaw = (eyeOption?.総合 && typeof eyeOption.総合 === "object")
+        ? { ...eyeOption.総合 }
+        : {};
+    const mergedRaw = { ...baseRaw };
+
+    activeSkills.forEach((skillData) => {
+        const scaling = resolveWeaponGenerationSkillPowerScaling(skillData);
+        const skillPowerMultiplier = toFiniteNumber(scaling?.powerMultiplier) || 1;
+        Object.entries(skillData || {}).forEach(([key, value]) => {
+            const numeric = toFiniteNumber(value);
+            if (numeric === 0 && !Object.prototype.hasOwnProperty.call(skillData, key)) return;
+            if (numeric === 0) return;
+            const addValue = isEyeAttackScaledKey(key)
+                ? toScaledNumber(numeric, skillPowerMultiplier)
+                : numeric;
+            mergedRaw[key] = toFiniteNumber(mergedRaw[key]) + addValue;
+        });
+    });
+
+    const cut = toFiniteNumber(mergedRaw?.切断);
+    const pierce = toFiniteNumber(mergedRaw?.貫通);
+    const blunt = toFiniteNumber(mergedRaw?.打撃);
+    const shoot = toFiniteNumber(mergedRaw?.射撃);
+    const power = Math.max(cut, pierce, blunt, shoot, 0);
+    const guard = toFiniteNumber(
+        mergedRaw?.防御性能
+        || mergedRaw?.防御倍率
+        || mergedRaw?.防御
+        || mergedRaw?.守り
+        || 0
+    );
+    const attributeSum = ATTACK_OPTION_ATTRIBUTE_KEYS.reduce((sum, key) => (
+        sum + toFiniteNumber(mergedRaw?.[key])
+    ), 0);
+    const attribute = toFiniteNumber(mergedRaw?.属性) || attributeSum;
+
+    eyeOption.威力 = power;
+    eyeOption.防御 = guard;
+    eyeOption.守り = guard;
+    eyeOption.属性 = attribute;
+    eyeOption.総合 = mergedRaw;
+
+    console.log("[攻撃手段:眼][発動中加算]", {
+        context: normalizeBattleText(context?.logContext),
+        characterName,
+        activeSkillCount: activeSkills.length,
+        result: {
+            威力: power,
+            防御: guard,
+            属性: attribute
+        }
+    });
+}
+
+function hasWeaponGenerationEffect(skillData) {
+    if (!skillData || typeof skillData !== "object") return false;
+    const effectFields = [
+        skillData?.効果,
+        skillData?.効果概要,
+        skillData?.Ef
+    ];
+    if (effectFields.some((value) => normalizeBattleText(value).includes("武器生成"))) {
+        return true;
+    }
+    const detail = normalizeBattleText(skillData?.詳細 || skillData?.description);
+    if (!detail) return false;
+    return /効果\s*[:：]\s*武器生成/.test(detail) || detail.includes("武器生成");
+}
+
+function normalizeWeaponGenerationAttackOptionValue(token) {
+    const text = normalizeConditionToken(token);
+    if (!text) return "";
+    if (text === "武器" || text === "武器1") return "武器";
+    if (text === "武器2") return "武器2";
+    if (text === "武器3" || text === "創造") return "武器3";
+    if (text.includes("武器3") || text.includes("創造")) return "武器3";
+    if (text.includes("武器2")) return "武器2";
+    if (text.includes("武器")) return "武器";
+    return "";
+}
+
+function resolveWeaponGenerationAttackOptionValue(skillData) {
+    if (!skillData || typeof skillData !== "object") return "";
+    const methodFieldCandidates = [
+        skillData?.攻撃手段,
+        skillData?.attackMethod,
+        skillData?.条件
+    ];
+    for (const field of methodFieldCandidates) {
+        const direct = normalizeWeaponGenerationAttackOptionValue(field);
+        if (direct) return direct;
+        const tokens = splitConditionTokens(field);
+        for (const token of tokens) {
+            const normalized = normalizeWeaponGenerationAttackOptionValue(token);
+            if (normalized) return normalized;
+        }
+    }
+
+    const detail = normalizeBattleText(skillData?.詳細 || skillData?.description);
+    if (!detail) return "";
+    const detailMatch = detail.match(/攻撃手段\s*[:：]\s*([^\s,，/／|｜]+)/);
+    if (!detailMatch) return "";
+    return normalizeWeaponGenerationAttackOptionValue(detailMatch[1]);
+}
+
+function resolveWeaponGenerationKindToken(skillData) {
+    if (!skillData || typeof skillData !== "object") return "";
+    const fields = [
+        skillData?.詳細,
+        skillData?.description,
+        skillData?.和名,
+        skillData?.技名,
+        skillData?.name
+    ];
+    for (const field of fields) {
+        const text = normalizeBattleText(field);
+        if (!text) continue;
+        const match = text.match(/武器生成\s*[:：]\s*([^\s,，/／|｜()（）]+)/);
+        if (!match) continue;
+        const token = normalizeBattleText(match[1]);
+        if (token) return token;
+    }
+    return "";
+}
+
+function isWeaponGenerationGunKind(kindToken) {
+    const text = normalizeBattleText(kindToken);
+    if (!text) return false;
+    return text.includes("銃");
+}
+
+function resolveWeaponGenerationSkillPowerScaling(skillData) {
+    const sourceSkill = (skillData && typeof skillData === "object") ? skillData : {};
+    const statSource = getMultiplierStatSource(sourceSkill);
+    const attackReference = getAttackStatReference(sourceSkill);
+    const additionalPowerReference = getAdditionalPowerReference(sourceSkill);
+    const attackValue = getAttackStatValue(statSource, sourceSkill);
+    const additionalPowerValue = getAdditionalPowerValue(statSource, sourceSkill);
+    const attackMultiplier = 1 + attackValue / 100;
+    const additionalPowerMultiplier = 1 + additionalPowerValue / 500;
+
+    let magicMultiplier = 1;
+    if (shouldApplyMagicMultiplierToDisplay(sourceSkill)) {
+        const magicLevel = getMagicLevelForMultiplier(sourceSkill, sourceSkill?.種別, "M");
+        if (magicLevel !== null) {
+            const resolved = 0.15 + magicLevel * 0.2;
+            if (Number.isFinite(resolved) && resolved > 0) {
+                magicMultiplier = resolved;
+            }
+        }
+    }
+
+    const powerMultiplier = attackMultiplier * additionalPowerMultiplier * magicMultiplier;
+    return {
+        attackReference,
+        additionalPowerReference,
+        attackValue,
+        additionalPowerValue,
+        attackMultiplier,
+        additionalPowerMultiplier,
+        magicMultiplier,
+        powerMultiplier: Number.isFinite(powerMultiplier) && powerMultiplier > 0
+            ? powerMultiplier
+            : 1
+    };
+}
+
+function resolveWeaponGenerationAttackRiseMultiplier() {
+    if (typeof baseValues === "undefined" || typeof increaseValues === "undefined") {
+        return 1;
+    }
+    const attackTotal = toFiniteNumber(baseValues?.攻撃) + toFiniteNumber(increaseValues?.攻撃);
+    return Math.max(0, (100 + attackTotal) / 100);
+}
+
+function resolveWeaponGenerationGuardValue(sourceSkill, fallbackWeaponPower = 0) {
+    const guardAliases = ["物理ガード", "物理防御", "物理ガード値", "防御性能", "防御倍率", "防御", "守り", "ガード", "guard"];
+    const guardText = getSkillFieldValueByAliases(sourceSkill, guardAliases);
+    if (isMeaningfulConditionValue(guardText)) {
+        return {
+            guard: toFiniteNumber(guardText),
+            source: "physicalGuard"
+        };
+    }
+    return {
+        guard: Math.round(Math.max(0, toFiniteNumber(fallbackWeaponPower)) * 0.8),
+        source: "weaponPower*0.8"
+    };
+}
+
+function hasAttackCountFieldInSkillData(skillData) {
+    if (!skillData || typeof skillData !== "object") return false;
+    return Object.keys(skillData).some((rawKey) => {
+        const key = String(rawKey || "").replace(/[\s　:_\-]/g, "").trim();
+        return key.includes("攻撃回数") || key.includes("追加回数") || key === "回数";
+    });
+}
+
+function getWeaponGenerationAttackCount(skillData) {
+    const info = getSkillAttackCountInfo(skillData);
+    if (!info.hasExplicitBase && info.addedCount <= 0) return 1;
+    return Math.max(1, Math.round(toFiniteNumber(info.totalCount) || 1));
+}
+
+function buildWeaponGenerationAttackOptionRaw(skillData, optionValue) {
+    const sourceSkill = (skillData && typeof skillData === "object") ? skillData : {};
+    const skillName = normalizeBattleText(sourceSkill?.和名 || sourceSkill?.技名 || sourceSkill?.name) || "武器生成";
+    const optionLabel = optionValue === "武器3" ? "創造" : (optionValue === "武器2" ? "武器2" : "武器1");
+    const weaponGenerationKind = resolveWeaponGenerationKindToken(sourceSkill);
+    const skillPowerScaling = resolveWeaponGenerationSkillPowerScaling(sourceSkill);
+    const cutBase = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["切断", "切断威力", "切断倍率"], 0));
+    const pierceBase = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["貫通", "貫通威力", "貫通倍率"], 0));
+    const bluntBase = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["打撃", "打撃威力", "打撃倍率"], 0));
+    const shootBase = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["射撃", "射撃威力"], 0));
+    const cut = toScaledNumber(cutBase, skillPowerScaling.powerMultiplier);
+    const pierce = toScaledNumber(pierceBase, skillPowerScaling.powerMultiplier);
+    const blunt = toScaledNumber(bluntBase, skillPowerScaling.powerMultiplier);
+    const shoot = toScaledNumber(shootBase, skillPowerScaling.powerMultiplier);
+    const provisionalPower = Math.max(cut, pierce, blunt, shoot, 0);
+    const guardResolved = resolveWeaponGenerationGuardValue(sourceSkill, provisionalPower);
+    const guard = toFiniteNumber(guardResolved.guard);
+    const minDamage = toFiniteNumber(getFirstFiniteNumberByKeys(
+        sourceSkill,
+        ["最低ダメージ", "最低威力", "最低ダメ", "ダメージブレ", "ダメブレ"],
+        0
+    ));
+    const physicalPenetration = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["物理貫通"], 0));
+    const critRateBonus = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["Cr率", "CRI率", "クリ率"], 0));
+    const critPowerBonus = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["Cr威力", "CRI威力", "クリ威力"], 0));
+    const finalCritRate = WEAPON_GENERATION_BASE_CRIT_RATE + critRateBonus;
+    const finalCritPower = WEAPON_GENERATION_BASE_CRIT_POWER + critPowerBonus;
+    const fullPower = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["全力", "全力補正", "全力倍率"], 0));
+    const attackCount = getWeaponGenerationAttackCount(sourceSkill);
+    const attributeBreakdown = {};
+    ATTACK_OPTION_ATTRIBUTE_KEYS.forEach((key) => {
+        const value = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, [key], 0));
+        if (value !== 0) {
+            attributeBreakdown[key] = value;
+        }
+    });
+    const explicitAttribute = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["属性", "element"], 0));
+    const attributeTotal = explicitAttribute !== 0
+        ? explicitAttribute
+        : Object.values(attributeBreakdown).reduce((sum, value) => sum + toFiniteNumber(value), 0);
+
+    const raw = {
+        名前: skillName,
+        種類: weaponGenerationKind || optionLabel,
+        種別: weaponGenerationKind || optionLabel,
+        武器生成: 1,
+        武器生成種別: weaponGenerationKind,
+        攻撃手段: optionValue,
+        全力: fullPower,
+        切断: cut,
+        貫通: pierce,
+        打撃: blunt,
+        射撃: shoot,
+        防御性能: guard,
+        防御倍率: guard,
+        最低ダメージ: minDamage,
+        Cr率: finalCritRate,
+        Cr威力: finalCritPower,
+        防御貫通: physicalPenetration,
+        物理貫通: physicalPenetration,
+        攻撃回数: attackCount,
+        属性: attributeTotal,
+        攻撃判定適用済み: 0,
+        防御判定適用済み: 0,
+        ...attributeBreakdown
+    };
+
+    const displayPowerRaw = provisionalPower;
+    const weaponGenerationIsGun = isWeaponGenerationGunKind(weaponGenerationKind);
+    const attackRiseMultiplier = resolveWeaponGenerationAttackRiseMultiplier();
+    const displayPower = weaponGenerationIsGun
+        ? displayPowerRaw
+        : Math.round(displayPowerRaw * attackRiseMultiplier);
+    return {
+        label: skillName,
+        威力: displayPower,
+        属性: attributeTotal,
+        防御: guard,
+        総合: raw,
+        __weaponGenerationDebug: {
+            optionValue,
+            skillName,
+            weaponGenerationKind,
+            weaponGenerationIsGun,
+            attackReference: skillPowerScaling.attackReference,
+            additionalPowerReference: skillPowerScaling.additionalPowerReference,
+            attackValue: skillPowerScaling.attackValue,
+            additionalPowerValue: skillPowerScaling.additionalPowerValue,
+            attackMultiplier: skillPowerScaling.attackMultiplier,
+            additionalPowerMultiplier: skillPowerScaling.additionalPowerMultiplier,
+            magicMultiplier: skillPowerScaling.magicMultiplier,
+            powerMultiplier: skillPowerScaling.powerMultiplier,
+            cutBase,
+            pierceBase,
+            bluntBase,
+            shootBase,
+            guardSource: guardResolved.source,
+            displayPowerRaw,
+            attackRiseMultiplier,
+            attackCount,
+            hasAttackCountField: hasAttackCountFieldInSkillData(sourceSkill),
+            baseCritRate: WEAPON_GENERATION_BASE_CRIT_RATE,
+            baseCritPower: WEAPON_GENERATION_BASE_CRIT_POWER,
+            critRateBonus,
+            critPowerBonus
+        }
+    };
+}
+
+function applyWeaponGenerationAttackOptionOverrides(options = attackOptions, context = {}) {
+    const list = Array.isArray(options) ? options : [];
+    restoreWeaponGenerationAttackOptionOverrides(list);
+
+    const characterName = normalizeBattleText(
+        context?.characterName
+        || selectName
+        || playerData?.name
+        || ""
+    );
+    const retainedBuffSkills = getRetainedBuffSkillDataListForCharacter(characterName);
+    if (retainedBuffSkills.length) {
+        retainedBuffSkills.forEach((skillData) => {
+            if (!hasWeaponGenerationEffect(skillData)) return;
+            const optionValue = resolveWeaponGenerationAttackOptionValue(skillData);
+            if (!isWeaponAttackOptionValue(optionValue)) return;
+            const targetOption = list.find((option) => normalizeBattleText(option?.value) === optionValue);
+            if (!targetOption) return;
+
+            if (!weaponGenerationAttackOptionOriginalMap.has(optionValue)) {
+                weaponGenerationAttackOptionOriginalMap.set(optionValue, cloneAttackOptionSnapshot(targetOption));
+            }
+
+            const overrideData = buildWeaponGenerationAttackOptionRaw(skillData, optionValue);
+            targetOption.label = overrideData.label;
+            targetOption.威力 = overrideData.威力;
+            targetOption.属性 = overrideData.属性;
+            targetOption.防御 = overrideData.防御;
+            targetOption.守り = overrideData.防御;
+            targetOption.総合 = overrideData.総合;
+
+            console.log("[武器生成][攻撃手段上書き]", {
+                context: normalizeBattleText(context?.logContext),
+                characterName,
+                target: optionValue,
+                overrideData
+            });
+            DebaglogSet("[武器生成][攻撃手段上書き]", {
+                context: normalizeBattleText(context?.logContext),
+                characterName,
+                target: optionValue,
+                overrideData
+            });
+        });
+    }
+
+    applyActiveEyeAttackOptionBonuses(list, context);
 }
 
 window.getWeaponAttackOptionData = getWeaponAttackOptionData;
@@ -2519,7 +2973,9 @@ function getFullPowerModeState() {
 
 async function applyFullPowerModeFromSkillSetModal(nextEnabled) {
     await setFullPowerMode(nextEnabled, { refreshSelected: true });
-    return buildSkillSetModalPayload();
+    const payload = buildSkillSetModalPayload();
+    logSkillSetFullPowerToggleSnapshot(nextEnabled ? "ON" : "OFF", payload);
+    return payload;
 }
 window.getFullPowerModeState = getFullPowerModeState;
 window.applyFullPowerModeFromSkillSetModal = applyFullPowerModeFromSkillSetModal;
@@ -5156,14 +5612,21 @@ function calculateBattleSkillDisplayData(slot, skillInput, options = {}) {
         }
     }
 
+    const isASlot = String(slot).toUpperCase() === "A";
     let fullPowerSkillMultiplier = 1;
     let fullPowerATotalMultiplier = 1;
     if (options.isFullPowerOn) {
-        let ownFullPower = toFiniteNumber(sourceSkill?.全力);
-        if (ownFullPower !== 0) {
+        // S/Q/M は「スキル自体の全力」だけを参照する。
+        // 条件Pなどでマージされた全力はここでは使わない。
+        const ownFullPower = toFiniteNumber(
+            getFirstFiniteNumberByKeys(skillData, ["全力"], 0)
+        );
+        // A枠は「全力合計(1.25基準)」を適用し、個別全力は重複適用しない。
+        // 非A枠は条件一致などで付与された個別全力(1.15基準)のみ適用する。
+        if (!isASlot && ownFullPower !== 0) {
             fullPowerSkillMultiplier = ownFullPower / 100 + 1.15;
         }
-        if (String(slot).toUpperCase() === "A") {
+        if (isASlot) {
             const totalFullPower = toFiniteNumber(options.totalFullPower);
             fullPowerATotalMultiplier = totalFullPower / 100 + 1.25;
         }
@@ -5693,10 +6156,14 @@ function parseAttackOptionFullPowerBonusPercent(value) {
     const num = Number(normalized);
     if (!Number.isFinite(num)) return 0;
 
-    // 攻撃手段側の全力は 1.5 のような倍率表記を許容し、
-    // A合計式(1.25 + 補正)へ入れるため補正値(%)へ変換する。
+    // 攻撃手段側の全力は 1.25 / 1.5 のような倍率表記を許容し、
+    // 1.0基準の補正値(%)へ変換する（1.25 -> +25%）。
+    // 0.25 のような増分表記も +25% として受け付ける。
     if (Math.abs(num) <= 5) {
-        return (num - 1.25) * 100;
+        if (num >= 0 && num < 1) {
+            return num * 100;
+        }
+        return (num - 1) * 100;
     }
     return num;
 }
@@ -6046,7 +6513,6 @@ function resolveASlotNormalAttackOverride(slot, skillData, options = {}) {
         toFiniteNumber(attackOptionRaw?.防御判定適用済み) !== 0
         || attackOptionRaw?.防御判定適用済み === true
     );
-
     const statSource = getMultiplierStatSource(skillData);
     const attackStat = getStatValueFromSource(statSource, "攻撃");
     const defenseStat = getStatValueFromSource(statSource, "防御");
@@ -7993,7 +8459,10 @@ function buildSkillSetModalRows() {
         const displayName = String(skillData?.和名 || skillData?.技名 || skillData?.name || "").trim();
         const displayRuby = String(skillData?.英名 || "").trim();
         const displayDescription = String(skillData?.詳細 || skillData?.description || "").trim();
-        let rowFullPower = toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["全力"], 0));
+        const isASlot = String(slot).toUpperCase() === "A";
+        let rowFullPower = isASlot
+            ? toFiniteNumber(getFirstFiniteNumberByKeys(sourceSkill, ["全力"], 0))
+            : toFiniteNumber(getFirstFiniteNumberByKeys(skillData, ["全力"], 0));
         if (isASlotNormalAttackBySkill(slot, sourceSkill)) {
             rowFullPower += getAttackOptionFullPowerValueWithLog(
                 getSelectedAttackOptionData(),
@@ -8071,6 +8540,11 @@ function buildSkillSetModalRows() {
             attributeBreakdownTitle: scaledAttributeBreakdownTitle || metricBreakdown.attributeTitle,
             totalBucket,
             fullPower: rowFullPower,
+            fullPowerMultiplier: toFiniteNumber(preview?.fullPowerMultiplier) || 1,
+            allPowerMultiplier: toFiniteNumber(preview?.allPowerMultiplier) || 1,
+            effectiveMultiplier: toFiniteNumber(preview?.effectiveMultiplier) || 1,
+            powerBeforeMultiplier: toFiniteNumber(preview?.powerBeforeMultiplier) || 0,
+            powerAfterMultiplier: toFiniteNumber(preview?.powerAfterMultiplier) || 0,
             critRate: slotCrRate,
             critPower: slotCrPower,
             minDamage: slotMinDamage,
@@ -8276,14 +8750,60 @@ window.openAttackMethodChangeModal = openAttackMethodChangeModal;
 
 function buildSkillSetModalPayload() {
     const modalData = buildSkillSetModalRows();
+    const rows = Array.isArray(modalData?.rows) ? modalData.rows : [];
+    const summary = modalData?.summary || null;
+    const aRow = rows.find((row) => String(row?.slot || "").toUpperCase() === "A") || null;
+    console.log("[選択中スキル管理][payload生成]", {
+        キャラクター名: selectName || playerData?.name || "",
+        全力ON: isFullPower,
+        全力合計値: toFiniteNumber(summary?.fullPowerTotal),
+        全力合計倍率: toFiniteNumber(summary?.fullPowerTotalMultiplier),
+        A枠_全力値: toFiniteNumber(aRow?.fullPower),
+        A枠_スキル名: String(aRow?.name || "").trim(),
+        行数: rows.length
+    });
     return {
-        rows: modalData?.rows || [],
-        summary: modalData?.summary || null,
+        rows,
+        summary,
         resourcePreview: buildSkillSetResourcePreview(),
         isFullPowerOn: isFullPower,
         currentAttackMethod: getCurrentAttackMethodValueForSkillSetModal(),
         attackMethods: buildAttackMethodOptionsForSkillSetModal()
     };
+}
+
+function logSkillSetFullPowerToggleSnapshot(sourceLabel = "", payload = null) {
+    const resolvedPayload = (payload && typeof payload === "object")
+        ? payload
+        : buildSkillSetModalPayload();
+    const rows = Array.isArray(resolvedPayload?.rows) ? resolvedPayload.rows : [];
+    const summary = (resolvedPayload?.summary && typeof resolvedPayload.summary === "object")
+        ? resolvedPayload.summary
+        : {};
+    const tableRows = rows
+        .filter((row) => String(row?.name || "").trim())
+        .map((row) => ({
+            スロット: String(row?.slot || "").trim(),
+            スキル名: String(row?.name || "").trim(),
+            元威力: Math.round(toFiniteNumber(row?.powerBeforeMultiplier)),
+            全力倍率: Number(toFiniteNumber(row?.fullPowerMultiplier).toFixed(4)),
+            全威力倍率: Number(toFiniteNumber(row?.allPowerMultiplier).toFixed(4)),
+            最終倍率: Number(toFiniteNumber(row?.effectiveMultiplier).toFixed(4)),
+            最終威力: Math.round(toFiniteNumber(row?.powerAfterMultiplier)),
+            表示威力: String(row?.power || "").trim(),
+            全力値: Number(toFiniteNumber(row?.fullPower).toFixed(4))
+        }));
+    const label = String(sourceLabel || "").trim() || "unknown";
+    console.groupCollapsed(`[選択中スキル管理][全力切替:${label}]`);
+    console.log("全力ON:", Boolean(resolvedPayload?.isFullPowerOn));
+    console.log("全力合計値:", toFiniteNumber(summary?.fullPowerTotal));
+    console.log("全力合計倍率:", toFiniteNumber(summary?.fullPowerTotalMultiplier));
+    if (tableRows.length > 0) {
+        console.table(tableRows);
+    } else {
+        console.log("選択中スキルなし");
+    }
+    console.groupEnd();
 }
 
 async function applyAttackMethodFromSkillSetModal(value) {
@@ -8582,6 +9102,10 @@ function selectSkill(slotKey, setSkill) {
 async function updateSelectedSkills() {
     const selectedSkillsTable = document.getElementById('selected-skills');
     selectedSkillsTable.innerHTML = '';
+    applyWeaponGenerationAttackOptionOverrides(attackOptions, {
+        characterName: selectName || playerData?.name || "",
+        logContext: "updateSelectedSkills"
+    });
     let totalPower = 0;
     let totalDefense = 0;
     let totalState = 0;
@@ -11064,6 +11588,10 @@ function getSkillsFromTable() {
 function populateAttackOptions(options) {
     const selectElement = document.getElementById("attack-method-select");
     if (!selectElement) return;
+    applyWeaponGenerationAttackOptionOverrides(options, {
+        characterName: selectName || playerData?.name || "",
+        logContext: "populateAttackOptions"
+    });
     const autoDefaultValue = getDefaultAttackOptionValue(options);
     const savedValue = normalizeBattleText(getSavedAttackOptionForCharacter());
     const characterKey = normalizeBattleText(getCharacterScopedKey());

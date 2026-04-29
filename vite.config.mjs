@@ -19,6 +19,8 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 index: resolve(__dirname, 'public/index.html'),
+                characterList: resolve(__dirname, 'public/character-list.html'),
+                characterCreate: resolve(__dirname, 'public/character-create.html'),
                 story: resolve(__dirname, 'public/story.html'),
                 load: resolve(__dirname, 'public/load.html'),
             },

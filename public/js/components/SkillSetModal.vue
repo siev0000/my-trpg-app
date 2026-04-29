@@ -1001,8 +1001,18 @@ const splitExtras = computed(() =>
 
 const extraA = computed(() => splitExtras.value.A);
 const extraM = computed(() => splitExtras.value.M);
-const fullPowerMultiplierA = computed(() => (toFiniteNumber(extraA.value.fullPower) / 100) + 1.25);
-const fullPowerMultiplierM = computed(() => (toFiniteNumber(extraM.value.fullPower) / 100) + 1.00);
+const slotARow = computed(() => displayRows.value.find((row) => String(row?.slot || '').toUpperCase() === 'A') || null);
+const slotMRow = computed(() => displayRows.value.find((row) => String(row?.slot || '').toUpperCase() === 'M') || null);
+const fullPowerMultiplierA = computed(() => {
+    const slotValue = toFiniteNumber(slotARow.value?.fullPowerMultiplier);
+    if (slotValue > 0) return slotValue;
+    return (toFiniteNumber(extraA.value.fullPower) / 100) + 1.25;
+});
+const fullPowerMultiplierM = computed(() => {
+    const slotValue = toFiniteNumber(slotMRow.value?.fullPowerMultiplier);
+    if (slotValue > 0) return slotValue;
+    return (toFiniteNumber(extraM.value.fullPower) / 100) + 1.00;
+});
 
 const basicTotalA = computed(() => (
     splitTotals.value.A.power
@@ -1052,6 +1062,7 @@ function normalizeRows(inputRows) {
             defensePenetration: toFiniteNumber(row?.defensePenetration),
             magicPenetration: toFiniteNumber(row?.magicPenetration),
             fullPower: toFiniteNumber(row?.fullPower),
+            fullPowerMultiplier: toFiniteNumber(row?.fullPowerMultiplier) || 1,
             description: String(row?.description || '').trim(),
             matchedPassiveCount: Number(row?.matchedPassiveCount) || 0,
             matchedPassives: Array.isArray(row?.matchedPassives) ? row.matchedPassives : [],
@@ -1088,6 +1099,7 @@ function normalizeRows(inputRows) {
             defensePenetration: 0,
             magicPenetration: 0,
             fullPower: 0,
+            fullPowerMultiplier: 1,
             description: '',
             matchedPassiveCount: 0,
             matchedPassives: [],
@@ -1180,6 +1192,16 @@ function closeAttackMethodModal(options = {}) {
 
 function applyPayloadData(payload = {}) {
     const incomingSummary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
+    const incomingRows = Array.isArray(payload?.rows) ? payload.rows : [];
+    const incomingARow = incomingRows.find((row) => String(row?.slot || '').toUpperCase() === 'A') || null;
+    console.log('[選択中スキル管理][payload受信]', {
+        全力ON: Boolean(payload?.isFullPowerOn),
+        全力合計値: toFiniteNumber(incomingSummary?.fullPowerTotal),
+        全力合計倍率: toFiniteNumber(incomingSummary?.fullPowerTotalMultiplier),
+        A枠_全力値: toFiniteNumber(incomingARow?.fullPower),
+        A枠_スキル名: String(incomingARow?.name || '').trim(),
+        行数: incomingRows.length
+    });
     summary.value = {
         critRate: toFiniteNumber(incomingSummary.critRate),
         critPower: toFiniteNumber(incomingSummary.critPower),
@@ -1835,7 +1857,7 @@ onBeforeUnmount(() => {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 15px;
     color: #1f3550;
     font-weight: 700;
 }
